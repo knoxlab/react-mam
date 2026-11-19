@@ -10,14 +10,19 @@ import {
 interface Props {
   /** 登录成功后触发目录/活动等刷新。 */
   onAuthChanged?: () => void;
+  /** 侧栏收起时仅显示头像/登录图标。 */
+  collapsed?: boolean;
+  /** 收起态点击用户区时展开侧栏（不直接登录）。 */
+  onExpand?: () => void;
 }
 
 /**
  * 左侧栏底部固定用户区：
  * - 未登录：显示「登录」按钮 → 打开登录弹窗
  * - 已登录：头像 + 显示名，点击可退出
+ * - 收起侧栏：仅头像/登录图标，点击先展开侧栏
  */
-export function SidebarUser({ onAuthChanged }: Props) {
+export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [ready, setReady] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -88,28 +93,39 @@ export function SidebarUser({ onAuthChanged }: Props) {
 
   return (
     <>
-      <div className="sidebar-user">
+      <div className={`sidebar-user${collapsed ? ' is-collapsed' : ''}`}>
         {ready && user && user.authenticated ? (
           <div className="user-block" ref={menuRef}>
             <button
               type="button"
-              className="user-trigger"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-expanded={menuOpen}
-              aria-label="用户菜单"
+              className={`user-trigger${collapsed ? ' compact' : ''}`}
+              onClick={() => {
+                if (collapsed) {
+                  onExpand?.();
+                  return;
+                }
+                setMenuOpen((v) => !v);
+              }}
+              aria-expanded={collapsed ? undefined : menuOpen}
+              aria-label={collapsed ? '展开侧栏查看用户' : '用户菜单'}
+              title={collapsed ? name : undefined}
             >
               <span className="user-avatar" aria-hidden="true">
                 {avatarText(user)}
               </span>
-              <span className="user-meta">
-                <span className="user-name">{name}</span>
-                {role && <span className="user-role">{role}</span>}
-              </span>
-              <span className="user-caret" aria-hidden="true">
-                ▾
-              </span>
+              {!collapsed && (
+                <>
+                  <span className="user-meta">
+                    <span className="user-name">{name}</span>
+                    {role && <span className="user-role">{role}</span>}
+                  </span>
+                  <span className="user-caret" aria-hidden="true">
+                    ▾
+                  </span>
+                </>
+              )}
             </button>
-            {menuOpen && (
+            {menuOpen && !collapsed && (
               <div className="user-menu" role="menu">
                 <div className="user-menu-info">
                   <div className="user-menu-name">{name}</div>
@@ -124,6 +140,20 @@ export function SidebarUser({ onAuthChanged }: Props) {
               </div>
             )}
           </div>
+        ) : collapsed ? (
+          <button
+            type="button"
+            className="user-login-btn compact"
+            title="登录"
+            aria-label="登录"
+            onClick={() => {
+              onExpand?.();
+              setShowLogin(true);
+            }}
+            disabled={!ready}
+          >
+            {ready ? '登' : '…'}
+          </button>
         ) : (
           <button
             type="button"

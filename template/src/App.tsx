@@ -39,19 +39,25 @@ function navigate(route: Route) {
 }
 
 const NAV_MAIN = [
-  { key: 'dashboard', label: '工作台' },
-  { key: 'library', label: '媒资库' },
-  { key: 'review', label: '审核队列' },
-  { key: 'ai', label: 'AI 加工中心' }
+  { key: 'dashboard', label: '工作台', icon: '▦' },
+  { key: 'library', label: '媒资库', icon: '▤' },
+  { key: 'review', label: '审核队列', icon: '✓' },
+  { key: 'ai', label: 'AI 加工中心', icon: '✦' }
 ] as const;
 
 const NAV_KINDS = [
-  { key: 'all', label: '全部素材' },
-  { key: 'image', label: '图片' },
-  { key: 'video', label: '视频' },
-  { key: 'audio', label: '音频' },
-  { key: 'model3d', label: '三维模型' },
-  { key: 'document', label: '文档' }
+  { key: 'all', label: '全部素材', icon: '☰' },
+  { key: 'image', label: '图片', icon: '图' },
+  { key: 'video', label: '视频', icon: '视' },
+  { key: 'audio', label: '音频', icon: '音' },
+  { key: 'model3d', label: '三维模型', icon: '模' },
+  { key: 'document', label: '文档', icon: '文' }
+];
+
+const NAV_ADMIN = [
+  { label: '权限配置', icon: '🔐', disabled: true, title: 'L2 配置包 / 平台管理端' },
+  { label: '审计日志', icon: '☰', disabled: true, title: '平台审计日志入口' },
+  { label: '系统设置', icon: '⚙', disabled: true, title: '平台系统设置入口' }
 ];
 
 const EMPTY: MamCatalog = {
@@ -65,6 +71,8 @@ const EMPTY: MamCatalog = {
   activityStatus: 'error'
 };
 
+const SIDEBAR_KEY = 'mam.sidebar.collapsed';
+
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash());
   const [catalog, setCatalog] = useState<MamCatalog>(EMPTY);
@@ -72,6 +80,13 @@ export function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const [detailResult, setDetailResult] = useState<AssetDetailResult | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return sessionStorage.getItem(SIDEBAR_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const siteId = useMemo(() => siteIdFromLocation(), []);
 
   useEffect(() => {
@@ -98,6 +113,18 @@ export function App() {
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
   const go = useCallback((next: Route) => navigate(next), []);
 
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        sessionStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
   const activeNav = useMemo(() => {
     if (route.name === 'detail') return 'library';
     if (route.name === 'library') return 'library';
@@ -107,7 +134,6 @@ export function App() {
   const counts = useMemo(() => workflowCounts(catalog.assets), [catalog.assets]);
   const reviewCount = counts.review;
 
-  // 详情独立走 API（不依赖列表缓存）
   const detailKey = route.name === 'detail' ? route.id : '';
   useEffect(() => {
     if (!detailKey) {
@@ -133,38 +159,47 @@ export function App() {
   const assetForRoute: MediaAsset | null = useMemo(() => {
     if (route.name !== 'detail') return null;
     if (detailResult?.asset) return detailResult.asset;
-    // API 返回前的瞬时回退：列表缓存（仅作骨架，不替代详情请求）
     return catalog.assets.find((a) => a.id === route.id) || null;
   }, [route, detailResult, catalog.assets]);
 
   return (
-    <div className="app-container">
-      <aside className="sidebar">
+    <div className={`app-container${collapsed ? ' sidebar-collapsed' : ''}`}>
+      <aside className={`sidebar${collapsed ? ' is-collapsed' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-title">融媒体媒资中心</div>
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: 11,
-              color: 'var(--color-text-secondary)',
-              fontFamily: 'var(--mono)'
-            }}
-          >
-            {loading
-              ? '加载中…'
-              : catalog.source === 'live'
-                ? `API 实时 · ${catalog.assets.length} 条`
-                : catalog.source === 'empty'
-                  ? `无数据${catalog.error ? `（${catalog.error}）` : ''}`
-                  : '演示数据'}
+          <div className="sidebar-header-row">
+            <button
+              type="button"
+              className="sidebar-collapse-btn"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
+              title={collapsed ? '展开侧栏' : '收起侧栏'}
+            >
+              {collapsed ? '»' : '«'}
+            </button>
+            <div className="sidebar-title" title="融媒体媒资中心">
+              {collapsed ? '媒' : '融媒体媒资中心'}
+            </div>
           </div>
+          {!collapsed && (
+            <div className="sidebar-status">
+              {loading
+                ? '加载中…'
+                : catalog.source === 'live'
+                  ? `API 实时 · ${catalog.assets.length} 条`
+                  : catalog.source === 'empty'
+                    ? `无数据${catalog.error ? `（${catalog.error}）` : ''}`
+                    : '演示数据'}
+            </div>
+          )}
         </div>
+
         <nav className="sidebar-nav">
           {NAV_MAIN.map((item) => (
             <button
               key={item.key}
               type="button"
               className={`nav-item${activeNav === item.key ? ' active' : ''}`}
+              title={collapsed ? item.label : undefined}
               onClick={() => {
                 if (item.key === 'dashboard') go({ name: 'dashboard' });
                 else if (item.key === 'library') go({ name: 'library' });
@@ -172,12 +207,21 @@ export function App() {
                 else go({ name: 'ai' });
               }}
             >
-              {item.label}
-              {item.key === 'review' && reviewCount > 0 ? ` (${reviewCount})` : ''}
+              <span className="nav-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="nav-label">{item.label}</span>
+              {!collapsed && item.key === 'review' && reviewCount > 0 ? (
+                <span className="nav-count">({reviewCount})</span>
+              ) : null}
+              {collapsed && item.key === 'review' && reviewCount > 0 ? (
+                <span className="nav-dot" aria-label={`${reviewCount} 待审`} />
+              ) : null}
             </button>
           ))}
 
-          <div className="nav-section-title">分类</div>
+          {!collapsed && <div className="nav-section-title">分类</div>}
+          {collapsed && <div className="nav-section-divider" />}
           {NAV_KINDS.map((item) => (
             <button
               key={item.key}
@@ -185,31 +229,50 @@ export function App() {
               className={`nav-item${
                 route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
               }`}
+              title={collapsed ? item.label : undefined}
               onClick={() =>
                 go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
               }
             >
-              {item.label}
+              <span className="nav-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
 
-          <div className="nav-section-title">管理</div>
-          <button type="button" className="nav-item" disabled title="L2 配置包 / 平台管理端">
-            权限配置
-          </button>
-          <button type="button" className="nav-item" disabled title="平台审计日志入口">
-            审计日志
-          </button>
-          <button type="button" className="nav-item" disabled title="平台系统设置入口">
-            系统设置
-          </button>
+          {!collapsed && <div className="nav-section-title">管理</div>}
+          {collapsed && <div className="nav-section-divider" />}
+          {NAV_ADMIN.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="nav-item"
+              disabled={item.disabled}
+              title={collapsed ? item.label : item.title}
+            >
+              <span className="nav-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="nav-label">{item.label}</span>
+            </button>
+          ))}
 
-          <div className="nav-section-title">数据</div>
-          <button type="button" className="nav-item" onClick={reload}>
-            刷新 API 数据
+          {!collapsed && <div className="nav-section-title">数据</div>}
+          <button
+            type="button"
+            className="nav-item"
+            title={collapsed ? '刷新 API 数据' : undefined}
+            onClick={reload}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              ↻
+            </span>
+            <span className="nav-label">刷新 API 数据</span>
           </button>
         </nav>
-        <SidebarUser onAuthChanged={reload} />
+
+        <SidebarUser onAuthChanged={reload} collapsed={collapsed} onExpand={toggleCollapsed} />
       </aside>
 
       {route.name === 'dashboard' && (
