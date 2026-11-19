@@ -1,4 +1,5 @@
 import type {
+  ActivityItem,
   AssetKind,
   CopyrightStatus,
   MediaAsset,
@@ -11,12 +12,24 @@ import type {
 
 export type DataSource = 'live' | 'seed' | 'empty';
 
+export interface ActivityFeed {
+  items: ActivityItem[];
+  total: number;
+  /** unauthorized = 未登录/无站点 read 权限；error = 网络或 5xx；ok = 成功 */
+  status: 'ok' | 'unauthorized' | 'error';
+  message?: string;
+}
+
 export interface MamCatalog {
   source: DataSource;
   assets: MediaAsset[];
   versions: VersionItem[];
   shareLinks: ShareLink[];
   folders: FolderNode[];
+  activities: ActivityItem[];
+  activityTotal: number;
+  activityStatus: ActivityFeed['status'];
+  activityMessage?: string;
   error?: string;
 }
 
@@ -242,16 +255,163 @@ function toShareLink(row: ContentRow): ShareLink {
   };
 }
 
+const ACTION_LABELS: Record<string, string> = {
+  'POST createContent': '创建素材',
+  'POST updateContent': '更新素材',
+  'POST publishContent': '发布素材',
+  'POST updateStatus': '变更状态',
+  'POST submitContent': '提交审核',
+  'POST approve': '审核通过',
+  'POST reject': '审核驳回',
+  'POST saveVersion': '保存版本',
+  'POST revertVersion': '恢复版本',
+  'POST upload': '上传素材',
+  'POST download': '下载素材',
+  'POST createFolder': '创建栏目',
+  'POST updateFolder': '更新栏目',
+  'PUT updateContent': '编辑素材',
+  'DELETE deleteContent': '删除素材',
+  'POST login': '登录',
+  'POST logout': '登录',
+  'POST import': '导入站点包'
+};
+
+function actionLabel(action: string): string {
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  // POST createContent → 创建内容 等兜底
+  const m = action.match(/^(POST|PUT|PATCH|GET|DELETE)\s+(\w+)/);
+  if (m) {
+    const verb = m[1];
+    const name = m[2];
+    const verbMap: Record<string, string> = {
+      POST: '创建/执行',
+      PUT: '更新',
+      PATCH: '更新',
+      GET: '查看',
+      DELETE: '删除'
+    };
+    return `${verbMap[verb] || verb} ${name}`;
+  }
+  return action;
+}
+
+function activityIcon(action: string): { icon: string; bg: string; color: string } {
+  const a = action.toLowerCase();
+  if (a.includes('create') || a.includes('upload'))
+    return { icon: '↑', bg: 'rgba(0,102,204,0.1)', color: '#0066CC' };
+  if (a.includes('approve') || a.includes('publish') || a.includes('status'))
+    return { icon: '✓', bg: 'rgba(0,179,65,0.1)', color: '#00B341' };
+  if (a.includes('reject') || a.includes('delete'))
+    return { icon: '!', bg: 'rgba(211,47,47,0.08)', color: '#D32F2F' };
+  if (a.includes('update') || a.includes('save') || a.includes('revert'))
+    return { icon: '✎', bg: 'rgba(255,157,0,0.1)', color: '#B36B00' };
+  if (a.includes('submit') || a.includes('review'))
+    return { icon: '…', bg: 'rgba(233,30,99,0.1)', color: '#E91E63' };
+  return { icon: '•', bg: 'rgba(26,26,26,0.05)', color: '#5A5A5A' };
+}
+
+interface ActivityRow {
+  occurredAt?: string;
+  actor?: string;
+  actorName?: string;
+  action?: string;
+  objectType?: string;
+  objectId?: string;
+  title?: string;
+  result?: string;
+}
+
+function toActivityItem(row: ActivityRow): ActivityItem {
+  const action = row.action || '操作';
+  const icon = activityIcon(action);
+  const who = row.actorName || row.actor || '系统';
+  const title =
+    row.title ||
+    (row.objectType && row.objectType !== 'ContentController'
+      ? row.objectType
+      : row.objectType === 'ContentController'
+        ? '内容条目'
+        : row.objectId
+          ? String(row.objectId).slice(0, 8)
+          : '');
+  const time = (row.occurredAt || '').replace('T', ' ').slice(0, 19);
+  const result = row.result && row.result !== 'SUCCESS' ? ` · ${row.result}` : '';
+  return {
+    icon: icon.icon,
+    iconBg: icon.bg,
+    iconColor: icon.color,
+    action: `${who} ${actionLabel(action)}${result}`,
+    description: title ? `对象：${title}` : '站点审计事件',
+    time: `${time}${row.objectId ? ` · ${String(row.objectId).slice(0, 8)}` : ''}`
+  };
+}
+
+/** 最近活动：审计事件流，需站点 read 权限（管理端会话 Cookie）。 */
+export async function loadActivities(siteId: string, limit = 50): Promise<ActivityFeed> {
+  if (!siteId) {
+    return { items: [], total: 0, status: 'error', message: '未注入站点 ID' };
+  }
+  try {
+    const response = await fetch(
+      `/api/v1/sites/${encodeURIComponent(siteId)}/dashboard/activity?limit=${limit}`,
+      {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      }
+    );
+    if (response.status === 401 || response.status === 403) {
+      return {
+        items: [],
+        total: 0,
+        status: 'unauthorized',
+        message: '需登录管理端（站点 read 权限）后查看审计活动流'
+      };
+    }
+    if (!response.ok) {
+      return { items: [], total: 0, status: 'error', message: `活动接口 HTTP ${response.status}` };
+    }
+    const data = (await response.json()) as { items?: ActivityRow[]; total?: number };
+    const rows = Array.isArray(data.items) ? data.items : [];
+    // UI 只展示最近 12 条有意义事件
+    return {
+      items: rows.map(toActivityItem).slice(0, 12),
+      total: typeof data.total === 'number' ? data.total : rows.length,
+      status: 'ok'
+    };
+  } catch {
+    return { items: [], total: 0, status: 'error', message: '活动接口网络错误' };
+  }
+}
+
 export async function loadCatalog(siteId: string): Promise<MamCatalog> {
   if (!siteId) {
-    return { source: 'empty', assets: [], versions: [], shareLinks: [], folders: [], error: '未注入站点 ID' };
+    return {
+      source: 'empty',
+      assets: [],
+      versions: [],
+      shareLinks: [],
+      folders: [],
+      activities: [],
+      activityTotal: 0,
+      activityStatus: 'error',
+      activityMessage: '未注入站点 ID',
+      error: '未注入站点 ID'
+    };
   }
-  const [assets, versions, links, folders] = await Promise.all([
+  const [assets, versions, links, folders, activityFeed] = await Promise.all([
     queryRows(siteId, 'media_asset'),
     queryRows(siteId, 'media_version'),
     queryRows(siteId, 'share_link'),
-    loadFolders(siteId)
+    loadFolders(siteId),
+    loadActivities(siteId, 50)
   ]);
+  const base = {
+    activities: activityFeed.items,
+    activityTotal: activityFeed.total,
+    activityStatus: activityFeed.status,
+    activityMessage: activityFeed.message
+  };
   if (assets === null) {
     return {
       source: 'empty',
@@ -259,11 +419,11 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
       versions: [],
       shareLinks: [],
       folders,
+      ...base,
       error: '交付查询失败或无权限'
     };
   }
   const mapped = assets.map(toMediaAsset);
-  // 关联素材：同事件/同专题
   for (const asset of mapped) {
     asset.related = mapped
       .filter((other) => other.id !== asset.id)
@@ -285,7 +445,8 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
     assets: mapped,
     versions: (versions ?? []).map(toVersion),
     shareLinks: (links ?? []).map(toShareLink),
-    folders
+    folders,
+    ...base
   };
 }
 

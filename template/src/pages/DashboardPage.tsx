@@ -1,14 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import type { Route } from '../route';
 import {
-  ACTIVITIES,
   KIND_ICON,
   KIND_LABEL,
   METRICS,
   STATUS_KEY,
   STATUS_LABEL
 } from '../data';
-import type { MediaAsset, WorkflowStatus } from '../types';
+import type { ActivityItem, MediaAsset, WorkflowStatus } from '../types';
 import { workflowCounts, type DataSource } from '../api';
 
 interface Props {
@@ -17,6 +16,10 @@ interface Props {
   loading: boolean;
   source: DataSource;
   error?: string;
+  activities: ActivityItem[];
+  activityTotal: number;
+  activityStatus: 'ok' | 'unauthorized' | 'error';
+  activityMessage?: string;
 }
 
 function AssetCard({ asset, onClick }: { asset: MediaAsset; onClick: () => void }) {
@@ -47,7 +50,17 @@ function AssetCard({ asset, onClick }: { asset: MediaAsset; onClick: () => void 
   );
 }
 
-export function DashboardPage({ onNavigate, assets, loading, source, error }: Props) {
+export function DashboardPage({
+  onNavigate,
+  assets,
+  loading,
+  source,
+  error,
+  activities,
+  activityTotal,
+  activityStatus,
+  activityMessage
+}: Props) {
   const [query, setQuery] = useState('');
   const counts = useMemo(() => workflowCounts(assets), [assets]);
   const recent = useMemo(() => assets.slice(0, 4), [assets]);
@@ -196,43 +209,47 @@ export function DashboardPage({ onNavigate, assets, loading, source, error }: Pr
 
         <h2 className="section-title" style={{ marginTop: 28 }}>
           最近活动
+          <span className="sub">
+            {loading
+              ? '加载中…'
+              : activityStatus === 'ok'
+                ? `审计事件 · 共 ${activityTotal} 条`
+                : activityStatus === 'unauthorized'
+                  ? '需登录'
+                  : activityMessage || '不可用'}
+          </span>
         </h2>
-        {source === 'live' && assets.length > 0 ? (
-          <div className="activity-list">
-            {assets.slice(0, 5).map((a) => (
-              <div key={a.contentId || a.id} className="activity-item">
-                <div
-                  className="activity-icon"
-                  style={{ background: 'rgba(0,102,204,0.1)', color: 'var(--color-accent)' }}
-                >
-                  {KIND_ICON[a.kind]}
-                </div>
-                <div className="activity-details">
-                  <div className="activity-action">
-                    {a.uploader} · {STATUS_LABEL[a.status]}
-                    {a.copyright === 'pending' && (
-                      <span
-                        className="activity-badge"
-                        style={{ background: 'rgba(211,47,47,0.1)', color: 'var(--color-status-reject)' }}
-                      >
-                        版权未确认
-                      </span>
-                    )}
-                  </div>
-                  <div className="activity-description">
-                    素材「{a.title}」· {a.event !== '—' ? a.event : a.channel}
-                  </div>
-                  <div className="activity-time">
-                    {a.uploadedAt || '—'} · ID: {a.id}
-                  </div>
-                </div>
-              </div>
-            ))}
+        {loading && (
+          <div className="empty-state">
+            <div className="title">正在从后台加载活动…</div>
+            <div>GET /api/v1/sites/{"{siteId}"}/dashboard/activity</div>
           </div>
-        ) : (
+        )}
+        {!loading && activityStatus === 'ok' && activities.length === 0 && (
+          <div className="empty-state">
+            <div className="title">暂无活动记录</div>
+            <div>审计事件为空；在管理端执行创建/发布等操作后此处会更新。</div>
+          </div>
+        )}
+        {!loading && activityStatus === 'unauthorized' && (
+          <div className="empty-state">
+            <div className="title">活动流需登录查看</div>
+            <div>
+              {activityMessage ||
+                'GET /api/v1/sites/{siteId}/dashboard/activity 需要站点 read 权限。请先登录管理端再打开本页。'}
+            </div>
+          </div>
+        )}
+        {!loading && activityStatus === 'error' && activities.length === 0 && (
+          <div className="empty-state">
+            <div className="title">活动接口不可用</div>
+            <div>{activityMessage || error || '请稍后重试'}</div>
+          </div>
+        )}
+        {!loading && activities.length > 0 && (
           <div className="activity-list">
-            {ACTIVITIES.map((item, idx) => (
-              <div key={idx} className="activity-item">
+            {activities.map((item, idx) => (
+              <div key={`${item.time}-${idx}`} className="activity-item">
                 <div
                   className="activity-icon"
                   style={{ background: item.iconBg, color: item.iconColor }}
@@ -244,6 +261,25 @@ export function DashboardPage({ onNavigate, assets, loading, source, error }: Pr
                     {item.action}
                     {item.badge && <span className="activity-badge">{item.badge}</span>}
                   </div>
+                  <div className="activity-description">{item.description}</div>
+                  <div className="activity-time">{item.time}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading && activityStatus !== 'ok' && activities.length > 0 && (
+          <div className="activity-list">
+            {activities.map((item, idx) => (
+              <div key={`fb-${idx}`} className="activity-item">
+                <div
+                  className="activity-icon"
+                  style={{ background: item.iconBg, color: item.iconColor }}
+                >
+                  {item.icon}
+                </div>
+                <div className="activity-details">
+                  <div className="activity-action">{item.action}</div>
                   <div className="activity-description">{item.description}</div>
                   <div className="activity-time">{item.time}</div>
                 </div>

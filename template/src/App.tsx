@@ -51,7 +51,10 @@ const EMPTY: MamCatalog = {
   assets: [],
   versions: [],
   shareLinks: [],
-  folders: []
+  folders: [],
+  activities: [],
+  activityTotal: 0,
+  activityStatus: 'error'
 };
 
 export function App() {
@@ -180,6 +183,10 @@ export function App() {
           loading={loading}
           source={catalog.source}
           error={catalog.error}
+          activities={catalog.activities}
+          activityTotal={catalog.activityTotal}
+          activityStatus={catalog.activityStatus}
+          activityMessage={catalog.activityMessage}
         />
       )}
       {route.name === 'library' && (
