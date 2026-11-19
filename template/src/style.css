@@ -453,22 +453,31 @@ a {
   position: relative;
 }
 
+/* 默认与侧栏同底（白/透明），悬停再出现区分色 */
 .user-trigger {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--color-section);
+  background: transparent;
   cursor: pointer;
   text-align: left;
   font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.user-trigger:hover {
-  background: #e8e9ea;
+.user-trigger:hover,
+.user-trigger:focus-visible {
+  background: var(--color-section);
+  border-color: var(--color-border);
+  outline: none;
+}
+
+.user-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
 }
 
 .user-avatar {
@@ -483,6 +492,11 @@ a {
   font-weight: 700;
   font-size: 15px;
   flex-shrink: 0;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.user-trigger:hover .user-avatar {
+  box-shadow: 0 2px 8px rgba(0, 102, 204, 0.35);
 }
 
 .user-meta {
