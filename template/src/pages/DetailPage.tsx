@@ -10,8 +10,8 @@ import type { MediaAsset, ShareLink, VersionItem } from '../types';
 import {
   copyText,
   exportAssetMetadata,
-  issueShareLink,
   loadContentOperations,
+  loadFieldValues,
   loadVersionDiff,
   performReview,
   saveFieldPatch,
@@ -21,6 +21,11 @@ import {
   type DataSource
 } from '../api';
 import { KindThumb } from '../KindThumb';
+import { CatalogEditModal } from '../ui/CatalogEditModal';
+import { RejectModal } from '../ui/RejectModal';
+import { ShareModal } from '../ui/ShareModal';
+import { MessageModal } from '../ui/MessageModal';
+import { AppModal } from '../ui/AppModal';
 
 function mapRole(role: string): string {
   const map: Record<string, string> = {
@@ -71,6 +76,16 @@ export function DetailPage({
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [diffInfo, setDiffInfo] = useState<string>('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [msg, setMsg] = useState<{
+    open: boolean;
+    title?: string;
+    message: string;
+    detail?: string;
+  }>({ open: false, message: '' });
   const siteId = useMemo(() => siteIdFromLocation(), []);
   const contentId = asset?.contentId || (/^[0-9a-f-]{36}$/i.test(id) ? id : '');
 
@@ -295,72 +310,88 @@ export function DetailPage({
     }
   ];
 
-  // —— 按钮操作 ——
+  // —— 按钮操作（应用内弹窗，非浏览器原生对话框） ——
 
   function handleEdit() {
     if (!contentId) {
       showToast('err', '缺少内容 ID');
       return;
     }
-    const title = window.prompt('编辑标题：', asset.title);
-    if (title == null) return;
-    const summary = window.prompt('编辑摘要：', asset.description);
-    if (summary == null) return;
-    void withBusy(async () => {
-      const r = await saveFieldPatch(
-        contentId,
-        {
-          title_s: title.trim() || asset.title,
-          summary_t: summary.trim() || asset.description
-        },
-        '编辑标题/摘要'
-      );
-      if (!r.ok) {
-        showToast('err', r.error || '编辑保存失败');
-        return;
-      }
-      showToast('ok', '已保存编辑（生成新版本）');
-      onRefresh?.();
-    });
+    setEditOpen(true);
   }
 
   function handleDownload() {
     if (!asset) return;
-    // 有登录会话时尝试媒体下载令牌；否则导出元数据副本作为回退
     void withBusy(async () => {
+      // 1) 从最新版本取 media_items 原件 UUID
+      let mediaId = '';
       try {
-        const mediaId = asset.contentId; // 若无独立 media id，用内容 id 尝试
+        const fields = await loadFieldValues(contentId || asset.contentId || '');
+        const items = fields.media_items;
+        if (Array.isArray(items) && items[0] && typeof items[0] === 'object') {
+          const row = items[0] as Record<string, unknown>;
+          mediaId = String(row.media_storage_uri_s || row.storage_uri_s || '');
+        }
+        if (!mediaId) mediaId = String(fields.storage_uri_s || '');
+      } catch {
+        /* ignore */
+      }
+      if (!mediaId) {
+        setMsg({
+          open: true,
+          title: '无法下载原件',
+          message: '该素材未关联可下载的媒体文件（media_items 为空）。',
+          detail: '请在编目「关联媒体」中上传原件后重试。'
+        });
+        return;
+      }
+      try {
         const res = await fetch(
           `/api/v1/delivery/sites/${encodeURIComponent(siteId)}/media/${encodeURIComponent(
-            mediaId || asset.id
+            mediaId
           )}/download-token`,
-          { method: 'POST', credentials: 'include', headers: { Accept: 'application/json' } }
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { Accept: 'application/json' }
+          }
         );
         if (res.ok) {
-          const data = (await res.json()) as { url?: string; downloadUrl?: string; token?: string };
-          const url =
+          const data = (await res.json()) as {
+            url?: string;
+            downloadUrl?: string;
+            token?: string;
+          };
+          const path =
             data.url ||
             data.downloadUrl ||
             (data.token
-              ? `/api/v1/delivery/sites/${siteId}/media/${mediaId}/download?token=${data.token}`
+              ? `/api/v1/delivery/sites/${siteId}/media/${mediaId}/download?token=${encodeURIComponent(
+                  data.token
+                )}`
               : '');
-          if (url) {
+          if (path) {
             const a = document.createElement('a');
-            a.href = url.startsWith('http') ? url : url;
-            a.download = asset.id;
+            a.href = path;
+            a.download = `${asset.id}`;
             document.body.appendChild(a);
             a.click();
             a.remove();
-            showToast('ok', '已开始下载');
+            showToast('ok', '已开始下载原件');
             return;
           }
         }
+        let msg = `下载失败（HTTP ${res.status}）`;
+        try {
+          const b = (await res.json()) as { message?: string };
+          if (b.message) msg = b.message;
+        } catch {
+          /* ignore */
+        }
+        setMsg({ open: true, title: '下载失败', message: msg });
       } catch {
-        /* fallthrough */
+        setMsg({ open: true, title: '下载失败', message: '网络错误，无法获取下载地址' });
       }
-      // 回退：导出元数据文件，避免按钮无响应
-      exportAssetMetadata(asset, { note: '原件下载令牌不可用，已导出元数据' });
-      showToast('ok', '原件下载不可用，已导出元数据 JSON');
     });
   }
 
@@ -369,65 +400,45 @@ export function DetailPage({
       showToast('err', '缺少内容 ID');
       return;
     }
-    if (!window.confirm(`确认通过审核「${asset.title}」？`)) return;
-    await withBusy(async () => {
-      const r = await performReview(siteId, contentId, 'approve');
-      if (!r.ok) {
-        showToast('err', r.error || '通过失败');
-        return;
-      }
-      showToast('ok', '已通过审核（状态：已发布 / 编目：已通过）');
-      onRefresh?.();
-    });
+    setApproveOpen(true);
   }
 
-  async function handleReject() {
+  async function doApprove() {
+    if (!contentId || !asset) return;
+    setBusy(true);
+    const r = await performReview(siteId, contentId, 'approve');
+    setBusy(false);
+    if (!r.ok) {
+      showToast('err', r.error || '通过失败');
+      return;
+    }
+    setApproveOpen(false);
+    showToast('ok', '已通过审核（状态：已发布 / 编目：已通过）');
+    onRefresh?.();
+  }
+
+  function handleReject() {
     if (!contentId || !asset) {
       showToast('err', '缺少内容 ID');
       return;
     }
-    const comment = window.prompt('请填写驳回意见（必填）：', '');
-    if (comment == null) return;
-    if (!comment.trim()) {
-      showToast('err', '驳回必须填写意见');
-      return;
-    }
-    await withBusy(async () => {
-      const r = await performReview(siteId, contentId, 'reject', comment.trim());
-      if (!r.ok) {
-        showToast('err', r.error || '驳回失败');
-        return;
-      }
-      showToast('ok', `已驳回：${comment.trim()}（状态：草稿 / 编目：编目中）`);
-      onRefresh?.();
-    });
+    setRejectOpen(true);
   }
 
-  async function handleGenerateShare() {
+  async function doReject(comment: string) {
+    if (!contentId) throw new Error('缺少内容 ID');
+    const r = await performReview(siteId, contentId, 'reject', comment);
+    if (!r.ok) throw new Error(r.error || '驳回失败');
+    showToast('ok', `已驳回：${comment}（状态：草稿 / 编目：编目中）`);
+    onRefresh?.();
+  }
+
+  function handleGenerateShare() {
     if (!contentId) {
       showToast('err', '缺少内容 ID');
       return;
     }
-    const audience = window.prompt('分享使用方（受众）：', '采编部');
-    if (audience == null) return;
-    const maxStr = window.prompt('最大下载次数（可空）：', '10');
-    if (maxStr == null) return;
-    const maxDownloads = maxStr.trim() ? Number(maxStr.trim()) : undefined;
-    await withBusy(async () => {
-      const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-      const r = await issueShareLink(siteId, contentId, {
-        audience: audience.trim() || '默认受众',
-        expiresAt,
-        maxDownloads: maxDownloads && Number.isFinite(maxDownloads) ? maxDownloads : undefined
-      });
-      if (!r.ok) {
-        showToast('err', r.error || '生成分享失败');
-        return;
-      }
-      const link = r.url || `${location.origin}/api/v1/delivery/sites/${siteId}/shares/…`;
-      showToast('ok', `分享已生成：${link}`);
-      onRefresh?.();
-    });
+    setShareOpen(true);
   }
 
   function handleAddTopic() {
@@ -1124,6 +1135,112 @@ export function DetailPage({
           </div>
         </div>
       </aside>
+
+      {/* 编辑 → 编目表单 */}
+      {asset && contentId && (
+        <CatalogEditModal
+          open={editOpen}
+          siteId={siteId}
+          contentId={contentId}
+          assetTitle={asset.title}
+          fallback={{
+            title_s: asset.title,
+            summary_t: asset.description,
+            asset_code_s: asset.id,
+            asset_kind_s: asset.kind,
+            source_s: asset.source,
+            workflow_status_s: asset.status,
+            security_level_s: asset.security,
+            copyright_status_s: asset.copyright,
+            copyright_owner_s: asset.copyrightOwner,
+            license_s: asset.license === '内部使用' ? 'internal' : asset.license,
+            tags_ss: asset.tags.join('，'),
+            ai_tags_ss: asset.aiTags.join('，'),
+            event_s: asset.event === '—' ? '' : asset.event,
+            channel_s: asset.channel === '—' ? '' : asset.channel,
+            topic_group_s: asset.topic || '',
+            place_s: asset.place === '—' ? '' : asset.place,
+            persons_ss: asset.persons.join('，'),
+            subject_s: asset.subject === '—' ? '' : asset.subject,
+            uploader_s: asset.uploader,
+            version_s: asset.version,
+            mime_type_s: asset.mime,
+            file_size_i: '',
+            captured_at_dt: asset.capturedAt || '',
+            resolution_s: asset.resolution || ''
+          }}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            showToast('ok', '编目已保存（生成新版本）');
+            onRefresh?.();
+          }}
+        />
+      )}
+
+      {/* 驳回意见 */}
+      {asset && (
+        <RejectModal
+          open={rejectOpen}
+          assetTitle={asset.title}
+          onClose={() => setRejectOpen(false)}
+          onConfirm={doReject}
+        />
+      )}
+
+      {/* 通过确认 */}
+      <AppModal
+        open={approveOpen}
+        title="通过审核"
+        onClose={() => setApproveOpen(false)}
+        width={440}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setApproveOpen(false)}
+              disabled={busy}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-success"
+              onClick={() => void doApprove()}
+              disabled={busy}
+            >
+              {busy ? '提交中…' : '确认通过'}
+            </button>
+          </>
+        }
+      >
+        <p style={{ fontSize: 14, lineHeight: 1.6 }}>
+          确认通过审核「<strong>{asset?.title}</strong>」？
+          <br />
+          通过后状态为<strong>已发布 / 编目已通过</strong>，并写入版本与审计。
+        </p>
+      </AppModal>
+
+      {/* 生成分享 */}
+      {asset && contentId && (
+        <ShareModal
+          open={shareOpen}
+          siteId={siteId}
+          contentId={contentId}
+          assetTitle={asset.title}
+          onClose={() => setShareOpen(false)}
+          onIssued={onRefresh}
+        />
+      )}
+
+      {/* 通用消息 */}
+      <MessageModal
+        open={msg.open}
+        title={msg.title}
+        message={msg.message}
+        detail={msg.detail}
+        onClose={() => setMsg((s) => ({ ...s, open: false }))}
+      />
     </div>
   );
 }
