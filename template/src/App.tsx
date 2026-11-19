@@ -104,8 +104,11 @@ export function App() {
   });
   const [visibleCount, setVisibleCount] = useState<number>(99);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
+  const [flyoutTop, setFlyoutTop] = useState(52);
   const navRef = useRef<HTMLElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const flyoutRef = useRef<HTMLDivElement | null>(null);
   const siteId = useMemo(() => siteIdFromLocation(), []);
 
   useEffect(() => {
@@ -266,24 +269,59 @@ export function App() {
     };
   }, [collapsed, railItems.length]);
 
-  // 点击外部关闭浮动菜单
+  // 点击/焦点离开更多按钮或浮动菜单时自动隐藏
   useEffect(() => {
     if (!flyoutOpen) return;
-    const onDoc = (e: MouseEvent) => {
+    const onDocPointer = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (sidebarRef.current?.contains(t)) return;
+      if (moreBtnRef.current?.contains(t) || flyoutRef.current?.contains(t)) return;
       setFlyoutOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setFlyoutOpen(false);
     };
-    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('mousedown', onDocPointer);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('mousedown', onDocPointer);
       document.removeEventListener('keydown', onKey);
     };
   }, [flyoutOpen]);
+
+  // 浮动菜单与「更多」按钮垂直对齐（紧邻）
+  useEffect(() => {
+    if (!flyoutOpen || !moreBtnRef.current || !sidebarRef.current) return;
+    const update = () => {
+      const btn = moreBtnRef.current?.getBoundingClientRect();
+      const side = sidebarRef.current?.getBoundingClientRect();
+      if (!btn || !side) return;
+      setFlyoutTop(Math.max(0, btn.top - side.top));
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [flyoutOpen, visibleCount, overflow, collapsed]);
+
+  /** 焦点离开「更多」或菜单时收起 */
+  const handleMoreBlur = (e: React.FocusEvent<HTMLElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (!next) {
+      setFlyoutOpen(false);
+      return;
+    }
+    if (moreBtnRef.current?.contains(next) || flyoutRef.current?.contains(next)) return;
+    setFlyoutOpen(false);
+  };
+
+  const handleFlyoutBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (!next) {
+      setFlyoutOpen(false);
+      return;
+    }
+    if (flyoutRef.current?.contains(next) || moreBtnRef.current?.contains(next)) return;
+    setFlyoutOpen(false);
+  };
 
   const railVisible = collapsed ? railItems.slice(0, visibleCount) : [];
   const railHidden = collapsed ? railItems.slice(visibleCount) : [];
@@ -413,6 +451,7 @@ export function App() {
 
           {collapsed && overflow && (
             <button
+              ref={moreBtnRef}
               type="button"
               className={`nav-item nav-more-btn${flyoutOpen ? ' active' : ''}`}
               title="更多菜单"
@@ -420,6 +459,8 @@ export function App() {
               aria-haspopup="menu"
               onClick={() => setFlyoutOpen(true)}
               onMouseEnter={() => setFlyoutOpen(true)}
+              onFocus={() => setFlyoutOpen(true)}
+              onBlur={handleMoreBlur}
             >
               <span className="nav-icon" aria-hidden="true">
                 ⋯
@@ -429,14 +470,18 @@ export function App() {
           )}
         </nav>
 
-        {/* 收起且放不下时：浮动菜单仅展示未排入侧栏的其余项 */}
+        {/* 收起且放不下时：浮动菜单紧邻「更多」，仅展示其余项 */}
         {collapsed && overflow && (
           <div
+            ref={flyoutRef}
             className={`sidebar-flyout${flyoutOpen ? ' is-open' : ''}`}
             role="menu"
             aria-label="更多导航"
+            style={{ top: flyoutTop }}
             onMouseEnter={() => setFlyoutOpen(true)}
             onMouseLeave={() => setFlyoutOpen(false)}
+            onBlur={handleFlyoutBlur}
+            tabIndex={-1}
           >
             <div className="flyout-section">其余 {railHidden.length} 项</div>
             <div className="flyout-group">
@@ -459,9 +504,7 @@ export function App() {
                   {item.badge ? <span className="flyout-badge">{item.badge}</span> : null}
                 </button>
               ))}
-              {railHidden.length === 0 && (
-                <div className="flyout-empty">无更多项</div>
-              )}
+              {railHidden.length === 0 && <div className="flyout-empty">无更多项</div>}
             </div>
           </div>
         )}

@@ -184,7 +184,7 @@ a {
   position: relative;
 }
 
-/* —— 收起态浮动菜单（仅 overflow 时由「更多」触发） —— */
+/* —— 收起态浮动菜单：紧邻「更多」按钮右侧 —— */
 .sidebar-flyout {
   display: none;
   position: absolute;
@@ -200,13 +200,15 @@ a {
   z-index: 40;
   max-height: calc(100vh - 64px);
   overflow-y: auto;
-  animation: flyout-in 0.12s ease-out;
+  animation: flyout-in 0.1s ease-out;
+  /* 与侧栏右边贴齐 → 与「更多」图标紧邻 */
+  margin-left: 0;
 }
 
 @keyframes flyout-in {
   from {
     opacity: 0;
-    transform: translateX(-6px);
+    transform: translateX(-4px);
   }
   to {
     opacity: 1;
