@@ -16,6 +16,7 @@ import {
 } from './api';
 import type { MediaAsset } from './types';
 import { SidebarUser } from './SidebarUser';
+import { fetchCurrentUser, type CurrentUser } from './api';
 
 function parseHash(): Route {
   const raw = (window.location.hash || '#/dashboard').replace(/^#\/?/, '');
@@ -105,11 +106,29 @@ export function App() {
   const [visibleCount, setVisibleCount] = useState<number>(99);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [flyoutTop, setFlyoutTop] = useState(52);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [userReady, setUserReady] = useState(false);
   const navRef = useRef<HTMLElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const moreBtnRef = useRef<HTMLButtonElement | null>(null);
   const flyoutRef = useRef<HTMLDivElement | null>(null);
   const siteId = useMemo(() => siteIdFromLocation(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCurrentUser().then((u) => {
+      if (cancelled) return;
+      setCurrentUser(u.authenticated ? u : null);
+      setUserReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const handleUserChange = useCallback((u: CurrentUser | null) => {
+    setCurrentUser(u && u.authenticated ? u : null);
+  }, []);
 
   useEffect(() => {
     const onHash = () => setRoute(parseHash());
@@ -509,7 +528,14 @@ export function App() {
           </div>
         )}
 
-        <SidebarUser onAuthChanged={reload} collapsed={collapsed} onExpand={toggleCollapsed} />
+        <SidebarUser
+          user={currentUser}
+          userReady={userReady}
+          onUserChange={handleUserChange}
+          onAuthChanged={reload}
+          collapsed={collapsed}
+          onExpand={toggleCollapsed}
+        />
       </aside>
 
       {route.name === 'dashboard' && (
@@ -548,6 +574,7 @@ export function App() {
           source={detailResult?.status === 'ok' ? 'live' : catalog.source}
           detailStatus={detailResult?.status}
           detailMessage={detailResult?.message}
+          currentUser={currentUser}
         />
       )}
       {route.name === 'review' && (

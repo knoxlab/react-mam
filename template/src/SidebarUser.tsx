@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   avatarText,
-  fetchCurrentUser,
   login as apiLogin,
   logout as apiLogout,
   type CurrentUser
 } from './api';
 
 interface Props {
-  /** 登录成功后触发目录/活动等刷新。 */
+  /** 由 App 统一维护的当前用户（与详情页同步）。 */
+  user: CurrentUser | null;
+  userReady: boolean;
+  onUserChange: (user: CurrentUser | null) => void;
+  /** 登录/登出成功后触发目录/活动等刷新。 */
   onAuthChanged?: () => void;
   /** 侧栏收起时仅显示头像/登录图标。 */
   collapsed?: boolean;
@@ -22,9 +25,14 @@ interface Props {
  * - 已登录：头像 + 显示名，点击可退出
  * - 收起侧栏：仅头像/登录图标，点击先展开侧栏
  */
-export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [ready, setReady] = useState(false);
+export function SidebarUser({
+  user,
+  userReady,
+  onUserChange,
+  onAuthChanged,
+  collapsed,
+  onExpand
+}: Props) {
   const [showLogin, setShowLogin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState('');
@@ -32,19 +40,6 @@ export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchCurrentUser().then((u) => {
-      if (!cancelled) {
-        setUser(u.authenticated ? u : null);
-        setReady(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -71,7 +66,7 @@ export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
       setError(result.error || '登录失败');
       return;
     }
-    setUser(result.user?.authenticated ? result.user : { authenticated: true, username: username.trim() });
+    onUserChange(result.user?.authenticated ? result.user : { authenticated: true, username: username.trim() });
     setShowLogin(false);
     setPassword('');
     onAuthChanged?.();
@@ -79,7 +74,7 @@ export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
 
   async function doLogout() {
     await apiLogout();
-    setUser(null);
+    onUserChange(null);
     setMenuOpen(false);
     onAuthChanged?.();
   }
@@ -90,6 +85,7 @@ export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
     : user?.roles?.length
       ? user.roles[0]
       : '';
+  const ready = userReady;
 
   return (
     <>

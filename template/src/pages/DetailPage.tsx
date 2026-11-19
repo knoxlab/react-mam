@@ -1,15 +1,34 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Route } from '../route';
 import {
-  CURRENT_USER,
   KIND_LABEL,
   LEVEL_LABEL,
   STATUS_KEY,
   STATUS_LABEL
 } from '../data';
 import type { MediaAsset, ShareLink, VersionItem } from '../types';
-import { loadContentOperations, siteIdFromLocation, type ContentOperation, type DataSource } from '../api';
+import {
+  loadContentOperations,
+  siteIdFromLocation,
+  type ContentOperation,
+  type CurrentUser,
+  type DataSource
+} from '../api';
 import { KindThumb } from '../KindThumb';
+
+function mapRole(role: string): string {
+  const map: Record<string, string> = {
+    'system-admin': '系统管理员',
+    'site-admin': '站点管理员',
+    reviewer: '审核人',
+    approver: '审核人',
+    editor: '编辑/编目',
+    publisher: '发布人',
+    'media-admin': '媒资管理员',
+    'ai-governor': 'AI 治理员'
+  };
+  return map[role] || role;
+}
 
 interface Props {
   id: string;
@@ -22,6 +41,8 @@ interface Props {
   source: DataSource;
   detailStatus?: 'ok' | 'not-found' | 'unauthorized' | 'error' | 'loading';
   detailMessage?: string;
+  /** 与侧栏同步的当前登录用户 */
+  currentUser?: CurrentUser | null;
 }
 
 export function DetailPage({
@@ -34,7 +55,8 @@ export function DetailPage({
   loading,
   source,
   detailStatus,
-  detailMessage
+  detailMessage,
+  currentUser
 }: Props) {
   const [adopted, setAdopted] = useState<Set<string>>(new Set());
   const [operations, setOperations] = useState<ContentOperation[]>([]);
@@ -147,8 +169,34 @@ export function DetailPage({
     );
   }
 
-  const canFinalReview = !CURRENT_USER.isSubmitter && CURRENT_USER.canReview;
-  const mutexBlocked = asset.uploader === CURRENT_USER.name;
+  const displayName = currentUser
+    ? currentUser.displayName || currentUser.username || '用户'
+    : '未登录';
+  const displayRole = !currentUser
+    ? '访客'
+    : currentUser.roles?.includes('system-admin')
+      ? '系统管理员'
+      : currentUser.roles?.length
+        ? mapRole(currentUser.roles[0])
+        : '成员';
+
+  /** 终审权：已登录且具备管理/审核类角色（简化口径） */
+  const canFinalReview = Boolean(
+    currentUser?.authenticated &&
+      (currentUser.roles?.some((r) =>
+        ['system-admin', 'site-admin', 'reviewer', 'approver', 'media-admin'].includes(r)
+      ) ||
+        currentUser.roles?.includes('system-admin'))
+  );
+  const identityName = currentUser
+    ? currentUser.displayName || currentUser.username || ''
+    : '';
+  const mutexBlocked =
+    Boolean(identityName) &&
+    (asset.uploader === identityName ||
+      asset.uploader === currentUser?.username ||
+      (asset.persons || []).includes(identityName));
+
   const bannerClass =
     asset.status === 'approved'
       ? 'approved'
@@ -253,7 +301,7 @@ export function DetailPage({
                   : detailMessage || '详情 API'}
             </span>
             <span className="mutex-hint">
-              当前身份：{CURRENT_USER.name}（{CURRENT_USER.role}）
+              当前身份：{displayName}（{displayRole}）
               <br />
               四眼审批：提交人与终审人须分离
             </span>
@@ -267,7 +315,15 @@ export function DetailPage({
               type="button"
               className="btn btn-danger"
               disabled={!canFinalReview || mutexBlocked}
-              title={mutexBlocked ? '提交人不得终审本人提交素材' : '当前角色无终审权'}
+              title={
+                !currentUser
+                  ? '请先登录'
+                  : mutexBlocked
+                    ? '提交人不得终审本人提交素材'
+                    : !canFinalReview
+                      ? '当前角色无终审权'
+                      : ''
+              }
             >
               驳回
             </button>
@@ -276,9 +332,13 @@ export function DetailPage({
               className="btn btn-success"
               disabled={!canFinalReview || mutexBlocked}
               title={
-                mutexBlocked
-                  ? '提交人不得终审本人提交素材（peerReviewRequired）'
-                  : '当前角色无终审权'
+                !currentUser
+                  ? '请先登录'
+                  : mutexBlocked
+                    ? '提交人不得终审本人提交素材（peerReviewRequired）'
+                    : !canFinalReview
+                      ? '当前角色无终审权'
+                      : ''
               }
             >
               通过审核
