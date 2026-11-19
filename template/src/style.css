@@ -234,8 +234,11 @@ a {
 
 .user-login-btn.compact .login-icon {
   margin: 0;
-  font-size: 16px;
-  line-height: 1;
+}
+
+.user-login-btn.compact .login-icon-svg {
+  width: 18px;
+  height: 18px;
 }
 
 .user-login-btn {
@@ -256,9 +259,18 @@ a {
 }
 
 .user-login-btn .login-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 15px;
   line-height: 1;
   font-weight: 700;
+  flex-shrink: 0;
+}
+
+.user-login-btn .login-icon-svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .user-login-btn .login-label {
