@@ -140,28 +140,22 @@ export function SidebarUser({ onAuthChanged, collapsed, onExpand }: Props) {
               </div>
             )}
           </div>
-        ) : collapsed ? (
+        ) : (
           <button
             type="button"
-            className="user-login-btn compact"
+            className={`user-login-btn${collapsed ? ' compact' : ''}`}
             title="登录"
             aria-label="登录"
             onClick={() => {
-              onExpand?.();
+              if (collapsed) onExpand?.();
               setShowLogin(true);
             }}
             disabled={!ready}
           >
-            {ready ? '登' : '…'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="user-login-btn"
-            onClick={() => setShowLogin(true)}
-            disabled={!ready}
-          >
-            {ready ? '登录' : '…'}
+            <span className="login-icon" aria-hidden="true">
+              {ready ? ' →' : '…'}
+            </span>
+            {!collapsed && <span className="login-label">{ready ? '登录' : '…'}</span>}
           </button>
         )}
       </div>

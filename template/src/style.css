@@ -225,13 +225,17 @@ a {
 .user-trigger.compact,
 .user-login-btn.compact {
   justify-content: center;
-  padding: 6px;
+  padding: 8px 6px;
 }
 
-.user-login-btn.compact {
-  width: 100%;
-  padding: 8px;
-  font-size: 13px;
+.user-login-btn.compact .login-label {
+  display: none;
+}
+
+.user-login-btn.compact .login-icon {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .user-login-btn {
@@ -245,6 +249,20 @@ a {
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.user-login-btn .login-icon {
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.user-login-btn .login-label {
+  font-size: 14px;
 }
 
 .user-login-btn:hover:not(:disabled) {
