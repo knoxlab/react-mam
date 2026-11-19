@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import type { Route } from '../route';
 import {
   ACTIVITIES,
-  ASSETS,
   KIND_ICON,
   KIND_LABEL,
   METRICS,
@@ -10,32 +9,17 @@ import {
   STATUS_LABEL
 } from '../data';
 import type { MediaAsset, WorkflowStatus } from '../types';
+import { workflowCounts, type DataSource } from '../api';
 
 interface Props {
   onNavigate: (route: Route) => void;
+  assets: MediaAsset[];
+  loading: boolean;
+  source: DataSource;
+  error?: string;
 }
 
-function statusCounts() {
-  const c: Record<WorkflowStatus, number> = { editing: 0, review: 0, approved: 0, archived: 0 };
-  ASSETS.forEach((a) => {
-    c[a.status] += 1;
-  });
-  // 演示口径对齐设计稿四态分布（含历史累计）
-  return {
-    editing: c.editing + 22,
-    review: c.review + 9,
-    approved: c.approved + 479,
-    archived: c.archived + 1202
-  };
-}
-
-function AssetCard({
-  asset,
-  onClick
-}: {
-  asset: MediaAsset;
-  onClick: () => void;
-}) {
+function AssetCard({ asset, onClick }: { asset: MediaAsset; onClick: () => void }) {
   return (
     <article className="asset-card" onClick={onClick} role="button" tabIndex={0}>
       <div className="asset-thumbnail">
@@ -55,7 +39,7 @@ function AssetCard({
           </div>
           <div className="meta-row">
             <span>上传者: {asset.uploader}</span>
-            <span>{asset.uploadedAt.slice(0, 10)}</span>
+            <span>{(asset.uploadedAt || '').slice(0, 10) || '—'}</span>
           </div>
         </div>
       </div>
@@ -63,29 +47,27 @@ function AssetCard({
   );
 }
 
-export function DashboardPage({ onNavigate }: Props) {
+export function DashboardPage({ onNavigate, assets, loading, source, error }: Props) {
   const [query, setQuery] = useState('');
-  const counts = useMemo(statusCounts, []);
-  const recent = useMemo(() => ASSETS.slice(0, 4), []);
+  const counts = useMemo(() => workflowCounts(assets), [assets]);
+  const recent = useMemo(() => assets.slice(0, 4), [assets]);
 
   const filtered = useMemo(() => {
     const q = query.trim();
-    if (!q) return recent;
-    return ASSETS.filter(
-      (a) =>
-        a.title.includes(q) ||
-        a.id.includes(q) ||
-        a.tags.some((t) => t.includes(q)) ||
-        a.event.includes(q)
-    ).slice(0, 8);
-  }, [query, recent]);
+    const pool = q ? assets : recent;
+    if (!q) return pool;
+    return pool
+      .filter(
+        (a) =>
+          a.title.includes(q) ||
+          a.id.includes(q) ||
+          a.tags.some((t) => t.includes(q)) ||
+          a.event.includes(q)
+      )
+      .slice(0, 8);
+  }, [query, assets, recent]);
 
-  const cards: {
-    key: WorkflowStatus;
-    label: string;
-    count: number;
-    status: string;
-  }[] = [
+  const cards: { key: WorkflowStatus; label: string; count: number; status: string }[] = [
     { key: 'editing', label: '编目中', count: counts.editing, status: '待编目' },
     { key: 'review', label: '待审核', count: counts.review, status: '需要审核' },
     { key: 'approved', label: '已通过', count: counts.approved, status: '可用素材' },
@@ -96,7 +78,25 @@ export function DashboardPage({ onNavigate }: Props) {
     <main className="main-content">
       <header className="content-header">
         <div className="header-top">
-          <h1 className="page-title">工作台</h1>
+          <h1 className="page-title">
+            工作台
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color:
+                  source === 'live'
+                    ? 'var(--color-status-approved-text)'
+                    : 'var(--color-text-secondary)',
+                background: source === 'live' ? 'rgba(0,179,65,0.1)' : 'var(--color-section)',
+                border: '1px solid var(--color-border)',
+                padding: '4px 10px',
+                borderRadius: 12
+              }}
+            >
+              {loading ? '加载中…' : source === 'live' ? `API · ${assets.length} 条` : error || '无数据'}
+            </span>
+          </h1>
           <div className="header-actions">
             <button type="button" className="btn btn-secondary">
               批量操作
@@ -166,41 +166,91 @@ export function DashboardPage({ onNavigate }: Props) {
         </div>
 
         <h2 className="section-title">{query ? '搜索结果' : '最近上传'}</h2>
-        <div className="asset-grid">
-          {filtered.map((a) => (
-            <AssetCard key={a.id} asset={a} onClick={() => onNavigate({ name: 'detail', id: a.id })} />
-          ))}
-        </div>
-        {filtered.length === 0 && (
+        {loading && (
           <div className="empty-state">
-            <div className="title">无匹配结果</div>
-            <div>试试其他关键词，或清空搜索</div>
+            <div className="title">正在从后台加载素材…</div>
+            <div>GET /api/v1/delivery/sites/{"{siteId}"}/contents/query?contentType=media_asset</div>
+          </div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <div className="empty-state">
+            <div className="title">{query ? '无匹配结果' : '暂无已发布素材'}</div>
+            <div>
+              {error
+                ? error
+                : '请在管理端录入并发布 media_asset 内容后，此处将显示 API 实时数据。'}
+            </div>
+          </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <div className="asset-grid">
+            {filtered.map((a) => (
+              <AssetCard
+                key={a.contentId || a.id}
+                asset={a}
+                onClick={() => onNavigate({ name: 'detail', id: a.id })}
+              />
+            ))}
           </div>
         )}
 
         <h2 className="section-title" style={{ marginTop: 28 }}>
           最近活动
         </h2>
-        <div className="activity-list">
-          {ACTIVITIES.map((item, idx) => (
-            <div key={idx} className="activity-item">
-              <div
-                className="activity-icon"
-                style={{ background: item.iconBg, color: item.iconColor }}
-              >
-                {item.icon}
-              </div>
-              <div className="activity-details">
-                <div className="activity-action">
-                  {item.action}
-                  {item.badge && <span className="activity-badge">{item.badge}</span>}
+        {source === 'live' && assets.length > 0 ? (
+          <div className="activity-list">
+            {assets.slice(0, 5).map((a) => (
+              <div key={a.contentId || a.id} className="activity-item">
+                <div
+                  className="activity-icon"
+                  style={{ background: 'rgba(0,102,204,0.1)', color: 'var(--color-accent)' }}
+                >
+                  {KIND_ICON[a.kind]}
                 </div>
-                <div className="activity-description">{item.description}</div>
-                <div className="activity-time">{item.time}</div>
+                <div className="activity-details">
+                  <div className="activity-action">
+                    {a.uploader} · {STATUS_LABEL[a.status]}
+                    {a.copyright === 'pending' && (
+                      <span
+                        className="activity-badge"
+                        style={{ background: 'rgba(211,47,47,0.1)', color: 'var(--color-status-reject)' }}
+                      >
+                        版权未确认
+                      </span>
+                    )}
+                  </div>
+                  <div className="activity-description">
+                    素材「{a.title}」· {a.event !== '—' ? a.event : a.channel}
+                  </div>
+                  <div className="activity-time">
+                    {a.uploadedAt || '—'} · ID: {a.id}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="activity-list">
+            {ACTIVITIES.map((item, idx) => (
+              <div key={idx} className="activity-item">
+                <div
+                  className="activity-icon"
+                  style={{ background: item.iconBg, color: item.iconColor }}
+                >
+                  {item.icon}
+                </div>
+                <div className="activity-details">
+                  <div className="activity-action">
+                    {item.action}
+                    {item.badge && <span className="activity-badge">{item.badge}</span>}
+                  </div>
+                  <div className="activity-description">{item.description}</div>
+                  <div className="activity-time">{item.time}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
@@ -220,7 +270,8 @@ export function DashboardPage({ onNavigate }: Props) {
         </div>
 
         <div className="gate-note" style={{ marginTop: 16 }}>
-          类型快捷入口：{Object.entries(KIND_LABEL).map(([k, v]) => (
+          类型快捷入口：
+          {Object.entries(KIND_LABEL).map(([k, v]) => (
             <button
               key={k}
               type="button"

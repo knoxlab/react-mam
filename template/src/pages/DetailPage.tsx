@@ -6,29 +6,68 @@ import {
   KIND_ICON,
   KIND_LABEL,
   LEVEL_LABEL,
-  SHARE_LINKS,
   STATUS_KEY,
-  STATUS_LABEL,
-  VERSIONS,
-  getAsset
+  STATUS_LABEL
 } from '../data';
+import type { MediaAsset, ShareLink, VersionItem } from '../types';
+import type { DataSource } from '../api';
 
 interface Props {
   id: string;
   onNavigate: (route: Route) => void;
+  asset: MediaAsset | null;
+  assets: MediaAsset[];
+  versions: VersionItem[];
+  shareLinks: ShareLink[];
+  loading: boolean;
+  source: DataSource;
 }
 
-export function DetailPage({ id, onNavigate }: Props) {
-  const asset = useMemo(() => getAsset(id), [id]);
+export function DetailPage({
+  id,
+  onNavigate,
+  asset,
+  assets,
+  versions,
+  shareLinks,
+  loading,
+  source
+}: Props) {
   const [adopted, setAdopted] = useState<Set<string>>(new Set());
+
+  const related = useMemo(() => {
+    if (!asset) return [];
+    return assets
+      .filter((a) => a.id !== asset.id)
+      .map((other) => {
+        let type: 'batch' | 'event' | 'similar' = 'similar';
+        if (other.event === asset.event && asset.event && asset.event !== '—') type = 'event';
+        else if (other.topic && other.topic === asset.topic) type = 'batch';
+        return { id: other.id, title: other.title, type, meta: other.id };
+      })
+      .slice(0, 4);
+  }, [asset, assets]);
+
+  if (loading && !asset) {
+    return (
+      <main className="main-content">
+        <div className="content-area">
+          <div className="empty-state">
+            <div className="title">正在从后台加载素材详情…</div>
+            <div>ID: {id}</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!asset) {
     return (
       <main className="main-content">
         <div className="content-area">
           <div className="empty-state">
-            <div className="title">素材不存在</div>
-            <div>编号 {id} 无对应记录，或你无权查看（权限前置过滤）</div>
+            <div className="title">素材不存在或无权查看</div>
+            <div>编号 {id} 无对应已发布记录（权限前置过滤）</div>
             <button
               type="button"
               className="btn btn-primary"
@@ -45,7 +84,6 @@ export function DetailPage({ id, onNavigate }: Props) {
 
   const canFinalReview = !CURRENT_USER.isSubmitter && CURRENT_USER.canReview;
   const mutexBlocked = asset.uploader === CURRENT_USER.name;
-
   const bannerClass =
     asset.status === 'approved'
       ? 'approved'
@@ -55,12 +93,38 @@ export function DetailPage({ id, onNavigate }: Props) {
           ? 'progress'
           : 'archived';
 
+  const versionList: VersionItem[] =
+    versions.length > 0
+      ? versions
+      : [
+          {
+            label: asset.version || 'v1',
+            current: true,
+            note: '当前已发布快照',
+            actor: asset.uploader,
+            at: asset.uploadedAt,
+            change: '发布版本'
+          }
+        ];
+
+  const linkList: ShareLink[] =
+    shareLinks.length > 0
+      ? shareLinks
+      : [
+          {
+            name: '暂无分享链接',
+            url: '—',
+            used: '—',
+            expires: '可在管理端签发（到期/限次/吊销）'
+          }
+        ];
+
   const aiSuggestions = [
     {
       key: 'tags',
       label: '标签建议',
       badge: 'AI 辅助 · 建议态',
-      content: `建议添加标签: ${asset.aiTags.length ? asset.aiTags.map((t) => `#${t}`).join(' ') : '#待生成'}`,
+      content: `建议添加标签: ${asset.aiTags.length ? asset.aiTags.map((t) => `#${t}`).join(' ') : (asset.tags.length ? asset.tags.map((t) => `#${t}`).join(' ') : '#待生成')}`,
       disabled: false
     },
     {
@@ -85,7 +149,7 @@ export function DetailPage({ id, onNavigate }: Props) {
       label: '场景 / 人物识别',
       badge: '外部依赖 · P2 · 未接入',
       content:
-        '镜头、场景、人物、物体识别依赖外部媒体 AI 能力，当前环境未对接，该功能降级为 P2 且不承诺召回率（规格 10.4 第 3 条）。对接后此处展示识别结果与置信度，结果仍为建议态，须编目员确认。',
+        '镜头、场景、人物、物体识别依赖外部媒体 AI 能力，当前环境未对接，该功能降级为 P2 且不承诺召回率（规格 10.4 第 3 条）。',
       disabled: true
     }
   ];
@@ -102,9 +166,21 @@ export function DetailPage({ id, onNavigate }: Props) {
             <span>{asset.title}</span>
           </div>
           <div className="header-actions" style={{ justifyContent: 'flex-end' }}>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: source === 'live' ? 'var(--color-status-approved-text)' : 'var(--color-text-secondary)',
+                background: source === 'live' ? 'rgba(0,179,65,0.1)' : 'var(--color-section)',
+                border: '1px solid var(--color-border)',
+                padding: '4px 10px',
+                borderRadius: 12
+              }}
+            >
+              {source === 'live' ? 'API 实时数据' : '无数据'}
+            </span>
             <span className="mutex-hint">
-              当前身份：{CURRENT_USER.name}（{CURRENT_USER.role}
-              ）
+              当前身份：{CURRENT_USER.name}（{CURRENT_USER.role}）
               <br />
               四眼审批：提交人与终审人须分离
             </span>
@@ -126,7 +202,11 @@ export function DetailPage({ id, onNavigate }: Props) {
               type="button"
               className="btn btn-success"
               disabled={!canFinalReview || mutexBlocked}
-              title={mutexBlocked ? '提交人不得终审本人提交素材（peerReviewRequired）' : '当前角色无终审权'}
+              title={
+                mutexBlocked
+                  ? '提交人不得终审本人提交素材（peerReviewRequired）'
+                  : '当前角色无终审权'
+              }
             >
               通过审核
             </button>
@@ -223,8 +303,8 @@ export function DetailPage({ id, onNavigate }: Props) {
           <section className="version-section">
             <h2 className="section-title">版本历史</h2>
             <div className="version-list">
-              {VERSIONS.map((v) => (
-                <div key={v.label} className={`version-item${v.current ? ' current' : ''}`}>
+              {versionList.map((v, idx) => (
+                <div key={`${v.label}-${idx}`} className={`version-item${v.current ? ' current' : ''}`}>
                   <span className="version-tag">
                     {v.label}
                     {v.current ? ' · 当前' : ''}
@@ -249,7 +329,8 @@ export function DetailPage({ id, onNavigate }: Props) {
               ))}
             </div>
             <div className="gate-note">
-              回滚以“基于历史版本新建”方式实现，不覆盖历史记录（FR-GOV-003）。任意历史版本可查看、可比对。
+              回滚以“基于历史版本新建”方式实现，不覆盖历史记录（FR-GOV-003）。
+              {versions.length === 0 ? ' 当前未返回 media_version 业务版本行，显示条目当前快照。' : ''}
             </div>
           </section>
 
@@ -305,24 +386,12 @@ export function DetailPage({ id, onNavigate }: Props) {
                   <span className="sensitive-flag">提示 · 不自动判定</span>
                 </div>
                 <div className="sensitive-content">{asset.sensitiveNote}</div>
-                {asset.sensitiveVerdict && (
-                  <div className="sensitive-verdict">
-                    <span>
-                      <span className="label">判定人：</span>
-                      <span className="value">{asset.sensitiveVerdict.by}</span>
-                    </span>
-                    <span>
-                      <span className="label">判定结果：</span>
-                      <span className="value" style={{ color: 'var(--color-status-approved-text)' }}>
-                        {asset.sensitiveVerdict.result}
-                      </span>
-                    </span>
-                    <span>
-                      <span className="label">判定时间：</span>
-                      <span className="value">{asset.sensitiveVerdict.at}</span>
-                    </span>
-                  </div>
-                )}
+                <div className="sensitive-verdict">
+                  <span>
+                    <span className="label">判定人：</span>
+                    <span className="value">—（待人工判定）</span>
+                  </span>
+                </div>
                 <div className="sensitive-note">
                   判定结果已留痕；提示记录与人工判定均可在审计日志中按对象检索（FR-GOV-007 / FR-GOV-017）。
                 </div>
@@ -337,7 +406,18 @@ export function DetailPage({ id, onNavigate }: Props) {
           <section className="audit-section">
             <h2 className="section-title">操作记录</h2>
             <div className="audit-timeline">
-              {AUDITS.map((a, idx) => (
+              <div className="audit-item">
+                <div className="audit-header">
+                  <div className="audit-action">内容加载</div>
+                  <div className="audit-time">{asset.uploadedAt || '—'}</div>
+                </div>
+                <div className="audit-details">
+                  <span className="audit-user">前台 API</span> 经交付查询加载本素材
+                  <br />
+                  GET /api/v1/delivery/sites/…/contents/query · status=PUBLISHED
+                </div>
+              </div>
+              {AUDITS.slice(0, 5).map((a, idx) => (
                 <div key={idx} className="audit-item">
                   <div className="audit-header">
                     <div className="audit-action">{a.action}</div>
@@ -350,7 +430,8 @@ export function DetailPage({ id, onNavigate }: Props) {
               ))}
             </div>
             <div className="gate-note">
-              审计覆盖查看、下载、变更、授权、导出与 AI 调用，记录主体/时间/对象/结果，可在审计日志按三要素检索（FR-GOV-007）。
+              审计覆盖查看、下载、变更、授权、导出与 AI 调用，记录主体/时间/对象/结果（FR-GOV-007）。
+              本页素材元数据来自后台 API 实时查询。
             </div>
           </section>
         </div>
@@ -426,33 +507,19 @@ export function DetailPage({ id, onNavigate }: Props) {
           </div>
           <div className="gate-note">
             授权由<strong>发布门卫校验 + 人工终审</strong>执行，不作为 ACL 自动拦截依据（规格 5.4 / 10.4）。
-            版权口径的“授权期限”≠ ACL 有效期（ACL 无有效期字段）。
+            版权口径的“授权期限”≠ ACL 有效期。
           </div>
         </div>
 
         <div className="sidebar-section">
           <h3 className="sidebar-section-title">分享链接</h3>
-          {SHARE_LINKS.map((s) => (
-            <div key={s.name} className="share-link-item">
+          {linkList.map((s, idx) => (
+            <div key={`${s.name}-${idx}`} className="share-link-item">
               <strong>{s.name}</strong>
               <div className="share-link-url">{s.url}</div>
               <div className="share-link-meta">
                 <span className={s.expired ? 'expired' : undefined}>{s.used}</span>
                 <span>{s.expires}</span>
-              </div>
-              <div className="share-link-actions">
-                <button type="button" className="action-btn">
-                  {s.expired ? '重新生成' : '续期'}
-                </button>
-                {!s.expired && (
-                  <button
-                    type="button"
-                    className="action-btn"
-                    style={{ color: 'var(--color-status-reject)', borderColor: 'var(--color-status-reject)' }}
-                  >
-                    吊销
-                  </button>
-                )}
               </div>
             </div>
           ))}
@@ -480,7 +547,9 @@ export function DetailPage({ id, onNavigate }: Props) {
           </div>
           <div className="info-row">
             <span className="info-label">时间</span>
-            <span className="info-value">{(asset.capturedAt || asset.uploadedAt).slice(0, 10)}</span>
+            <span className="info-value">
+              {(asset.capturedAt || asset.uploadedAt || '').slice(0, 10) || '—'}
+            </span>
           </div>
           <div className="info-row">
             <span className="info-label">地点</span>
@@ -494,9 +563,7 @@ export function DetailPage({ id, onNavigate }: Props) {
             <span className="info-label">主题</span>
             <span className="info-value">{asset.subject}</span>
           </div>
-          <div className="gate-note">
-            七维均可点击反查检索（FR-GOV-011 / AC-GOV-001）；人物/地点/主题字典树由 L2 配置导入。
-          </div>
+          <div className="gate-note">七维均可反查检索（FR-GOV-011 / AC-GOV-001）。</div>
         </div>
 
         <div className="sidebar-section">
@@ -521,9 +588,9 @@ export function DetailPage({ id, onNavigate }: Props) {
 
         <div className="sidebar-section">
           <h3 className="sidebar-section-title">相关素材</h3>
-          {(asset.related || []).map((r) => (
+          {related.map((r) => (
             <div
-              key={r.id + r.title}
+              key={r.id}
               className="related-item"
               onClick={() => onNavigate({ name: 'detail', id: r.id })}
             >
@@ -536,11 +603,9 @@ export function DetailPage({ id, onNavigate }: Props) {
               <div className="related-meta">{r.meta}</div>
             </div>
           ))}
-          {(!asset.related || asset.related.length === 0) && (
-            <div className="gate-note">暂无关联素材。</div>
-          )}
+          {related.length === 0 && <div className="gate-note">暂无关联素材。</div>}
           <div className="gate-note">
-            语义相似查找受权限前置过滤约束，无权素材不会出现在此列表（FR-GOV-015 / 7.2）。
+            语义相似查找受权限前置过滤约束（FR-GOV-015 / 7.2）。
           </div>
         </div>
       </aside>

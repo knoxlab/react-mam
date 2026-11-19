@@ -9,6 +9,10 @@ export type AiTab = 'pending' | 'adopted' | 'ignored' | 'sensitive' | 'tasks';
 
 export interface MediaAsset {
   id: string;
+  /** 后台 content id（UUID），用于后续写操作。 */
+  contentId?: string;
+  /** 交付查询原始行，便于扩展。 */
+  contentRowId?: string;
   title: string;
   kind: AssetKind;
   status: WorkflowStatus;
