@@ -1051,6 +1051,185 @@ export async function performReview(
   return { ok: true };
 }
 
+/** 读取内容当前 fieldValues（最新版本）。 */
+export async function loadFieldValues(
+  contentId: string
+): Promise<Record<string, unknown>> {
+  try {
+    const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) return {};
+    const list = (await res.json()) as AdminVersionRow[];
+    const latest = list?.[0];
+    if (!latest?.fieldValues) return {};
+    return parseFieldValues(latest.fieldValues);
+  } catch {
+    return {};
+  }
+}
+
+/** 合并字段并保存新版本（编辑/加标签/专题等）。 */
+export async function saveFieldPatch(
+  contentId: string,
+  patch: Record<string, unknown>,
+  note: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!contentId) return { ok: false, error: '缺少内容 ID' };
+  const current = await loadFieldValues(contentId);
+  const next = { ...current, ...patch };
+  try {
+    const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        fieldValues: JSON.stringify(next),
+        note
+      })
+    });
+    if (!res.ok) {
+      let msg = `保存失败（HTTP ${res.status}）`;
+      try {
+        const b = (await res.json()) as { message?: string };
+        if (b.message) msg = b.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: '网络错误，保存失败' };
+  }
+}
+
+/** 版本差异对比。 */
+export async function loadVersionDiff(
+  contentId: string,
+  from: number,
+  to: number
+): Promise<{
+  ok: boolean;
+  changedFields?: number;
+  changes?: { field?: string; fieldCode?: string; before?: unknown; after?: unknown; from?: unknown; to?: unknown }[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch(
+      `/api/v1/contents/${encodeURIComponent(contentId)}/versions/diff?from=${from}&to=${to}`,
+      {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      }
+    );
+    if (!res.ok) return { ok: false, error: `对比失败（HTTP ${res.status}）` };
+    const data = (await res.json()) as {
+      changedFields?: number;
+      changes?: { field?: string; fieldCode?: string; before?: unknown; after?: unknown; from?: unknown; to?: unknown }[];
+    };
+    return { ok: true, changedFields: data.changedFields, changes: data.changes || [] };
+  } catch {
+    return { ok: false, error: '网络错误，对比失败' };
+  }
+}
+
+/** 签发分享链接。 */
+export async function issueShareLink(
+  siteId: string,
+  contentId: string,
+  input: { audience: string; expiresAt?: string; maxDownloads?: number }
+): Promise<{ ok: boolean; url?: string; tokenHint?: string; error?: string }> {
+  if (!siteId || !contentId) return { ok: false, error: '缺少站点或内容 ID' };
+  try {
+    const res = await fetch(
+      `/api/v1/sites/${encodeURIComponent(siteId)}/contents/${encodeURIComponent(contentId)}/shares`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          audience: input.audience || '默认受众',
+          ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+          ...(input.maxDownloads ? { maxDownloads: input.maxDownloads } : {})
+        })
+      }
+    );
+    if (!res.ok) {
+      let msg = `生成分享失败（HTTP ${res.status}）`;
+      try {
+        const b = (await res.json()) as { message?: string };
+        if (b.message) msg = b.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: msg };
+    }
+    const data = (await res.json()) as {
+      url?: string;
+      link?: string;
+      tokenHint?: string;
+      token?: string;
+      downloadUrl?: string;
+    };
+    const url =
+      data.url ||
+      data.link ||
+      data.downloadUrl ||
+      (data.token ? `${location.origin}/api/v1/delivery/sites/${siteId}/shares/${data.token}` : '');
+    return { ok: true, url: url || undefined, tokenHint: data.tokenHint };
+  } catch {
+    return { ok: false, error: '网络错误，生成分享失败' };
+  }
+}
+
+/** 导出元数据为 JSON 文件。 */
+export function exportAssetMetadata(asset: MediaAsset, extra?: Record<string, unknown>): void {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    asset,
+    ...extra
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json;charset=utf-8'
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${asset.id || 'asset'}-metadata.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+/** 复制文本到剪贴板。 */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fallback */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 interface AdminVersionRow {
   id?: string;
   version?: number;

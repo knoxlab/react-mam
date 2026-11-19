@@ -8,7 +8,13 @@ import {
 } from '../data';
 import type { MediaAsset, ShareLink, VersionItem } from '../types';
 import {
+  copyText,
+  exportAssetMetadata,
+  issueShareLink,
   loadContentOperations,
+  loadVersionDiff,
+  performReview,
+  saveFieldPatch,
   siteIdFromLocation,
   type ContentOperation,
   type CurrentUser,
@@ -43,6 +49,8 @@ interface Props {
   detailMessage?: string;
   /** 与侧栏同步的当前登录用户 */
   currentUser?: CurrentUser | null;
+  /** 操作成功后刷新目录/详情 */
+  onRefresh?: () => void;
 }
 
 export function DetailPage({
@@ -56,13 +64,33 @@ export function DetailPage({
   source,
   detailStatus,
   detailMessage,
-  currentUser
+  currentUser,
+  onRefresh
 }: Props) {
   const [adopted, setAdopted] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [diffInfo, setDiffInfo] = useState<string>('');
+  const siteId = useMemo(() => siteIdFromLocation(), []);
+  const contentId = asset?.contentId || (/^[0-9a-f-]{36}$/i.test(id) ? id : '');
+
+  const showToast = (kind: 'ok' | 'err', text: string) => {
+    setToast({ kind, text });
+    window.setTimeout(() => setToast(null), 3600);
+  };
+
+  async function withBusy(fn: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  }
   const [operations, setOperations] = useState<ContentOperation[]>([]);
   const [opsLoading, setOpsLoading] = useState(false);
   const [opsError, setOpsError] = useState('');
-  const siteId = useMemo(() => siteIdFromLocation(), []);
 
   const contentKey = asset?.contentId || (asset && /^[0-9a-f-]{36}$/i.test(id) ? id : '') || '';
 
@@ -267,6 +295,255 @@ export function DetailPage({
     }
   ];
 
+  // —— 按钮操作 ——
+
+  function handleEdit() {
+    if (!contentId) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    const title = window.prompt('编辑标题：', asset.title);
+    if (title == null) return;
+    const summary = window.prompt('编辑摘要：', asset.description);
+    if (summary == null) return;
+    void withBusy(async () => {
+      const r = await saveFieldPatch(
+        contentId,
+        {
+          title_s: title.trim() || asset.title,
+          summary_t: summary.trim() || asset.description
+        },
+        '编辑标题/摘要'
+      );
+      if (!r.ok) {
+        showToast('err', r.error || '编辑保存失败');
+        return;
+      }
+      showToast('ok', '已保存编辑（生成新版本）');
+      onRefresh?.();
+    });
+  }
+
+  function handleDownload() {
+    if (!asset) return;
+    // 有登录会话时尝试媒体下载令牌；否则导出元数据副本作为回退
+    void withBusy(async () => {
+      try {
+        const mediaId = asset.contentId; // 若无独立 media id，用内容 id 尝试
+        const res = await fetch(
+          `/api/v1/delivery/sites/${encodeURIComponent(siteId)}/media/${encodeURIComponent(
+            mediaId || asset.id
+          )}/download-token`,
+          { method: 'POST', credentials: 'include', headers: { Accept: 'application/json' } }
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { url?: string; downloadUrl?: string; token?: string };
+          const url =
+            data.url ||
+            data.downloadUrl ||
+            (data.token
+              ? `/api/v1/delivery/sites/${siteId}/media/${mediaId}/download?token=${data.token}`
+              : '');
+          if (url) {
+            const a = document.createElement('a');
+            a.href = url.startsWith('http') ? url : url;
+            a.download = asset.id;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            showToast('ok', '已开始下载');
+            return;
+          }
+        }
+      } catch {
+        /* fallthrough */
+      }
+      // 回退：导出元数据文件，避免按钮无响应
+      exportAssetMetadata(asset, { note: '原件下载令牌不可用，已导出元数据' });
+      showToast('ok', '原件下载不可用，已导出元数据 JSON');
+    });
+  }
+
+  async function handleApprove() {
+    if (!contentId || !asset) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    if (!window.confirm(`确认通过审核「${asset.title}」？`)) return;
+    await withBusy(async () => {
+      const r = await performReview(siteId, contentId, 'approve');
+      if (!r.ok) {
+        showToast('err', r.error || '通过失败');
+        return;
+      }
+      showToast('ok', '已通过审核（状态：已发布 / 编目：已通过）');
+      onRefresh?.();
+    });
+  }
+
+  async function handleReject() {
+    if (!contentId || !asset) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    const comment = window.prompt('请填写驳回意见（必填）：', '');
+    if (comment == null) return;
+    if (!comment.trim()) {
+      showToast('err', '驳回必须填写意见');
+      return;
+    }
+    await withBusy(async () => {
+      const r = await performReview(siteId, contentId, 'reject', comment.trim());
+      if (!r.ok) {
+        showToast('err', r.error || '驳回失败');
+        return;
+      }
+      showToast('ok', `已驳回：${comment.trim()}（状态：草稿 / 编目：编目中）`);
+      onRefresh?.();
+    });
+  }
+
+  async function handleGenerateShare() {
+    if (!contentId) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    const audience = window.prompt('分享使用方（受众）：', '采编部');
+    if (audience == null) return;
+    const maxStr = window.prompt('最大下载次数（可空）：', '10');
+    if (maxStr == null) return;
+    const maxDownloads = maxStr.trim() ? Number(maxStr.trim()) : undefined;
+    await withBusy(async () => {
+      const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      const r = await issueShareLink(siteId, contentId, {
+        audience: audience.trim() || '默认受众',
+        expiresAt,
+        maxDownloads: maxDownloads && Number.isFinite(maxDownloads) ? maxDownloads : undefined
+      });
+      if (!r.ok) {
+        showToast('err', r.error || '生成分享失败');
+        return;
+      }
+      const link = r.url || `${location.origin}/api/v1/delivery/sites/${siteId}/shares/…`;
+      showToast('ok', `分享已生成：${link}`);
+      onRefresh?.();
+    });
+  }
+
+  function handleAddTopic() {
+    if (!contentId) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    const topic = window.prompt('加入专题（填写专题名）：', asset.topic || '');
+    if (topic == null) return;
+    if (!topic.trim()) {
+      showToast('err', '专题名不能为空');
+      return;
+    }
+    void withBusy(async () => {
+      const r = await saveFieldPatch(contentId, { topic_group_s: topic.trim() }, '添加到专题');
+      if (!r.ok) {
+        showToast('err', r.error || '保存专题失败');
+        return;
+      }
+      showToast('ok', `已加入专题：${topic.trim()}`);
+      onRefresh?.();
+    });
+  }
+
+  async function handleCopyLink() {
+    const url = `${location.origin}${location.pathname}#/detail/${encodeURIComponent(asset.id)}`;
+    const ok = await copyText(url);
+    showToast(ok ? 'ok' : 'err', ok ? `链接已复制：${url}` : '复制失败，请手动复制');
+  }
+
+  function handleExport() {
+    exportAssetMetadata(asset, {
+      versions: versionList,
+      shareLinks: linkList,
+      operations
+    });
+    showToast('ok', '元数据 JSON 已导出');
+  }
+
+  async function handleCompare() {
+    if (!contentId) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    await withBusy(async () => {
+      // 优先用 props 中的版本；不足时重新拉取
+      let labels = versionList.map((v) => parseInt(v.label.replace(/\D/g, ''), 10));
+      if (labels.filter((n) => Number.isFinite(n)).length < 2) {
+        try {
+          const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+            headers: { Accept: 'application/json' },
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const list = (await res.json()) as { version?: number }[];
+            labels = (list || []).map((x) => Number(x.version)).filter((n) => Number.isFinite(n));
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const nums = labels.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+      if (nums.length < 2) {
+        setDiffInfo('至少需要两个版本才能对比（当前可对比版本不足）。');
+        showToast('err', '版本不足，无法对比');
+        return;
+      }
+      const from = nums[0];
+      const to = nums[nums.length - 1];
+      const r = await loadVersionDiff(contentId, from, to);
+      if (!r.ok) {
+        setDiffInfo(r.error || '对比失败');
+        showToast('err', r.error || '对比失败');
+        return;
+      }
+      const changes = (r.changes || [])
+        .map((c) => {
+          const code = c.fieldCode || c.field || '';
+          const before = JSON.stringify(c.before ?? c.from ?? '');
+          const after = JSON.stringify(c.after ?? c.to ?? '');
+          return `${code}: ${before} → ${after}`;
+        })
+        .slice(0, 8);
+      const text =
+        `v${from} → v${to}：变更字段 ${r.changedFields ?? changes.length} 个` +
+        (changes.length ? `\n${changes.join('\n')}` : '\n（无字段级差异或仅状态/备注变化）');
+      setDiffInfo(text);
+      showToast('ok', `已对比 v${from} 与 v${to}`);
+    });
+  }
+
+  function handleAddTag() {
+    if (!contentId) {
+      showToast('err', '缺少内容 ID');
+      return;
+    }
+    const input = window.prompt(
+      '添加标签（多个用逗号分隔）：',
+      asset.tags.join('，')
+    );
+    if (input == null) return;
+    const tags = input
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    void withBusy(async () => {
+      const r = await saveFieldPatch(contentId, { tags_ss: tags }, '添加/更新标签');
+      if (!r.ok) {
+        showToast('err', r.error || '保存标签失败');
+        return;
+      }
+      showToast('ok', `标签已保存：${tags.map((t) => `#${t}`).join(' ') || '（空）'}`);
+      onRefresh?.();
+    });
+  }
+
   return (
     <div className="detail-page">
       <div className="detail-main-scroll">
@@ -305,16 +582,16 @@ export function DetailPage({
               <br />
               四眼审批：提交人与终审人须分离
             </span>
-            <button type="button" className="btn btn-secondary">
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={handleEdit}>
               编辑
             </button>
-            <button type="button" className="btn btn-secondary">
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={handleDownload}>
               下载
             </button>
             <button
               type="button"
               className="btn btn-danger"
-              disabled={!canFinalReview || mutexBlocked}
+              disabled={!canFinalReview || mutexBlocked || busy}
               title={
                 !currentUser
                   ? '请先登录'
@@ -324,13 +601,14 @@ export function DetailPage({
                       ? '当前角色无终审权'
                       : ''
               }
+              onClick={handleReject}
             >
               驳回
             </button>
             <button
               type="button"
               className="btn btn-success"
-              disabled={!canFinalReview || mutexBlocked}
+              disabled={!canFinalReview || mutexBlocked || busy}
               title={
                 !currentUser
                   ? '请先登录'
@@ -340,6 +618,7 @@ export function DetailPage({
                       ? '当前角色无终审权'
                       : ''
               }
+              onClick={handleApprove}
             >
               通过审核
             </button>
@@ -347,6 +626,44 @@ export function DetailPage({
         </header>
 
         <div className="content-area">
+          {toast && (
+            <div
+              className="mutex-banner"
+              role="status"
+              style={{
+                marginBottom: 16,
+                background:
+                  toast.kind === 'ok' ? 'rgba(0,179,65,0.08)' : 'rgba(211,47,47,0.08)',
+                borderLeftColor:
+                  toast.kind === 'ok' ? 'var(--color-status-approved)' : 'var(--color-status-reject)',
+                color:
+                  toast.kind === 'ok'
+                    ? 'var(--color-status-approved-text)'
+                    : 'var(--color-status-reject)'
+              }}
+            >
+              <strong>{toast.kind === 'ok' ? '成功' : '失败'}</strong>
+              <span>{toast.text}</span>
+            </div>
+          )}
+          {diffInfo && (
+            <div
+              className="gate-note"
+              style={{ marginBottom: 16, whiteSpace: 'pre-line', userSelect: 'text' }}
+            >
+              <strong>版本对比</strong>
+              {'\n'}
+              {diffInfo}
+              <button
+                type="button"
+                className="action-btn"
+                style={{ marginLeft: 8, marginTop: 8 }}
+                onClick={() => setDiffInfo('')}
+              >
+                关闭
+              </button>
+            </div>
+          )}
           <div className={`status-banner ${bannerClass}`}>
             <div className="banner-left">
               <span>
@@ -427,7 +744,9 @@ export function DetailPage({
                       {t} ×
                     </span>
                   ))}
-                  <span className="tag-add">+ 添加标签</span>
+                  <span className="tag-add" role="button" tabIndex={0} onClick={handleAddTag}>
+                    + 添加标签
+                  </span>
                 </div>
               </div>
             </div>
@@ -449,11 +768,15 @@ export function DetailPage({
                     </div>
                   </div>
                   <div className="version-actions">
-                    <button type="button" className="action-btn">
+                    <button type="button" className="action-btn" disabled={busy} onClick={handleCompare}>
                       对比差异
                     </button>
                     {!v.current && (
-                      <button type="button" className="action-btn">
+                      <button
+                        type="button"
+                        className="action-btn"
+                        onClick={() => showToast('ok', `已选择基于 ${v.label} 新建（演示：请在管理端执行回滚）`)}
+                      >
                         基于此版本新建
                       </button>
                     )}
@@ -687,7 +1010,13 @@ export function DetailPage({
               </div>
             </div>
           ))}
-          <button type="button" className="btn btn-secondary" style={{ width: '100%', marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ width: '100%', marginTop: 4 }}
+            disabled={busy}
+            onClick={handleGenerateShare}
+          >
             + 生成分享链接（到期/限次）
           </button>
           <div className="gate-note">
@@ -734,16 +1063,38 @@ export function DetailPage({
           <div className="action-section">
             <div className="action-title">操作</div>
             <div className="action-buttons">
-              <button type="button" className="btn btn-secondary" style={{ width: '100%' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                disabled={busy}
+                onClick={handleDownload}
+              >
                 下载原文件
               </button>
-              <button type="button" className="btn btn-secondary" style={{ width: '100%' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                disabled={busy}
+                onClick={handleAddTopic}
+              >
                 添加到专题
               </button>
-              <button type="button" className="btn btn-secondary" style={{ width: '100%' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                onClick={handleCopyLink}
+              >
                 复制链接
               </button>
-              <button type="button" className="btn btn-secondary" style={{ width: '100%' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                onClick={handleExport}
+              >
                 导出元数据
               </button>
             </div>

@@ -575,6 +575,7 @@ export function App() {
           detailStatus={detailResult?.status}
           detailMessage={detailResult?.message}
           currentUser={currentUser}
+          onRefresh={reload}
         />
       )}
       {route.name === 'review' && (
