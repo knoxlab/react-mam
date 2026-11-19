@@ -5,7 +5,14 @@ import { LibraryPage } from './pages/LibraryPage';
 import { DetailPage } from './pages/DetailPage';
 import { ReviewQueuePage } from './pages/ReviewQueuePage';
 import { AiCenterPage } from './pages/AiCenterPage';
-import { loadCatalog, siteIdFromLocation, workflowCounts, type MamCatalog } from './api';
+import {
+  loadAssetDetail,
+  loadCatalog,
+  siteIdFromLocation,
+  workflowCounts,
+  type AssetDetailResult,
+  type MamCatalog
+} from './api';
 import type { MediaAsset } from './types';
 
 function parseHash(): Route {
@@ -62,6 +69,8 @@ export function App() {
   const [catalog, setCatalog] = useState<MamCatalog>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const [detailResult, setDetailResult] = useState<AssetDetailResult | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const siteId = useMemo(() => siteIdFromLocation(), []);
 
   useEffect(() => {
@@ -97,10 +106,35 @@ export function App() {
   const counts = useMemo(() => workflowCounts(catalog.assets), [catalog.assets]);
   const reviewCount = counts.review;
 
+  // 详情独立走 API（不依赖列表缓存）
+  const detailKey = route.name === 'detail' ? route.id : '';
+  useEffect(() => {
+    if (!detailKey) {
+      setDetailResult(null);
+      setDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailResult(null);
+    loadAssetDetail(siteId, detailKey)
+      .then((res) => {
+        if (!cancelled) setDetailResult(res);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId, detailKey, reloadKey]);
+
   const assetForRoute: MediaAsset | null = useMemo(() => {
     if (route.name !== 'detail') return null;
+    if (detailResult?.asset) return detailResult.asset;
+    // API 返回前的瞬时回退：列表缓存（仅作骨架，不替代详情请求）
     return catalog.assets.find((a) => a.id === route.id) || null;
-  }, [route, catalog.assets]);
+  }, [route, detailResult, catalog.assets]);
 
   return (
     <div className="app-container">
@@ -206,10 +240,12 @@ export function App() {
           onNavigate={go}
           asset={assetForRoute}
           assets={catalog.assets}
-          versions={catalog.versions}
-          shareLinks={catalog.shareLinks}
-          loading={loading}
-          source={catalog.source}
+          versions={detailResult?.versions ?? catalog.versions}
+          shareLinks={detailResult?.shareLinks ?? catalog.shareLinks}
+          loading={detailLoading || (loading && !detailResult)}
+          source={detailResult?.status === 'ok' ? 'live' : catalog.source}
+          detailStatus={detailResult?.status}
+          detailMessage={detailResult?.message}
         />
       )}
       {route.name === 'review' && (

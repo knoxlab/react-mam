@@ -455,8 +455,217 @@ export async function loadAssetByCode(
   assetCode: string
 ): Promise<MediaAsset | null> {
   if (!siteId || !assetCode) return null;
-  const catalog = await loadCatalog(siteId);
-  return catalog.assets.find((a) => a.id === assetCode) || null;
+  const detail = await loadAssetDetail(siteId, assetCode);
+  return detail.asset;
+}
+
+export type DetailStatus = 'ok' | 'not-found' | 'unauthorized' | 'error' | 'loading';
+
+export interface AssetDetailResult {
+  asset: MediaAsset | null;
+  versions: VersionItem[];
+  shareLinks: ShareLink[];
+  status: DetailStatus;
+  message?: string;
+  /** content UUID（后台条目主键），用于版本/分享等写读接口。 */
+  contentId?: string;
+}
+
+interface AdminVersionRow {
+  id?: string;
+  version?: number;
+  fieldValues?: string;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
+  published?: boolean;
+  revertedFrom?: number;
+}
+
+function parseFieldValues(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function toVersionFromAdmin(row: AdminVersionRow): VersionItem {
+  const label = row.version != null ? `v${row.version}` : 'v1';
+  const note = row.note || (row.published ? '发布版本' : '版本快照');
+  return {
+    label,
+    current: row.published === true,
+    note,
+    actor: row.createdByName || row.createdBy || '系统',
+    at: (row.createdAt || '').replace('T', ' ').slice(0, 19),
+    change:
+      row.revertedFrom != null
+        ? `恢复自 v${row.revertedFrom}`
+        : row.published
+          ? '发布'
+          : note
+  };
+}
+
+function toShareFromAdmin(row: Record<string, unknown>): ShareLink {
+  const expires = text(row, 'expires_at_dt') || text(row, 'expiresAt');
+  const revoked = bool(row, 'revoked_b') || bool(row, 'revoked');
+  const expired = expires ? new Date(expires).getTime() < Date.now() : false;
+  const max = number(row, 'max_downloads_i') || number(row, 'maxDownloads');
+  const used = number(row, 'used_count_i') || number(row, 'usedCount');
+  const hint = text(row, 'token_hint_s') || text(row, 'tokenHint');
+  return {
+    name: text(row, 'title') || text(row, 'audience_s') || text(row, 'audience') || '分享链接',
+    url: hint ? `https://media.local/s/${hint}…` : '—',
+    used: max ? `限次 ${used}/${max}` : used ? `已用 ${used}` : '限次 —',
+    expires: expires ? `到期 ${expires.slice(0, 10)}` : '长期',
+    expired: revoked || expired
+  };
+}
+
+/**
+ * 内容详情 API：
+ * 1) 交付查询按资产编码定位条目（公开，含 fields）
+ * 2) 已登录时增强：GET /contents/{id}/versions、GET /sites/{id}/contents/{cid}/shares
+ */
+export async function loadAssetDetail(
+  siteId: string,
+  assetCode: string
+): Promise<AssetDetailResult> {
+  const empty: AssetDetailResult = {
+    asset: null,
+    versions: [],
+    shareLinks: [],
+    status: 'loading'
+  };
+  if (!siteId || !assetCode) {
+    return { ...empty, status: 'error', message: '缺少站点或资产编码' };
+  }
+
+  // 1) 定位条目（公开交付查询）
+  const rows = await queryRows(siteId, 'media_asset');
+  if (rows === null) {
+    return { ...empty, status: 'error', message: '交付查询失败' };
+  }
+  const row =
+    rows.find((r) => {
+      const f = rowFields(r);
+      return text(f, 'asset_code_s') === assetCode || text(r, 'id') === assetCode;
+    }) || null;
+  if (!row) {
+    return { ...empty, status: 'not-found', message: '无对应已发布素材' };
+  }
+
+  const asset = toMediaAsset(row);
+  const contentId = text(row, 'id');
+  asset.contentId = contentId;
+  asset.related = [];
+
+  let versions: VersionItem[] = [];
+  let shareLinks: ShareLink[] = [];
+  let status: DetailStatus = 'ok';
+  let message: string | undefined;
+
+  // 2) 登录态增强（版本 / 分享）；401 时不阻断详情主体
+  if (contentId) {
+    const [verRes, shareRes] = await Promise.all([
+      fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      }).catch(() => null),
+      fetch(
+        `/api/v1/sites/${encodeURIComponent(siteId)}/contents/${encodeURIComponent(contentId)}/shares`,
+        {
+          headers: { Accept: 'application/json' },
+          credentials: 'include',
+          cache: 'no-store'
+        }
+      ).catch(() => null)
+    ]);
+
+    if (verRes && verRes.ok) {
+      try {
+        const data: unknown = await verRes.json();
+        if (Array.isArray(data)) {
+          versions = (data as AdminVersionRow[]).map(toVersionFromAdmin);
+          // 最新在前（接口通常已倒序）
+          versions.sort((a, b) => {
+            const na = parseInt(a.label.replace(/\D/g, ''), 10) || 0;
+            const nb = parseInt(b.label.replace(/\D/g, ''), 10) || 0;
+            return nb - na;
+          });
+          if (versions.length > 0) versions[0] = { ...versions[0], current: true };
+        }
+      } catch {
+        /* ignore */
+      }
+    } else if (verRes && (verRes.status === 401 || verRes.status === 403)) {
+      status = 'ok';
+      message = '版本/分享需登录管理端后加载';
+    }
+
+    if (shareRes && shareRes.ok) {
+      try {
+        const data: unknown = await shareRes.json();
+        if (Array.isArray(data)) {
+          shareLinks = (data as Record<string, unknown>[]).map(toShareFromAdmin);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // 无版本接口数据时，用条目字段兜底一条当前快照
+  if (versions.length === 0) {
+    versions = [
+      {
+        label: asset.version || 'v1',
+        current: true,
+        note: '当前已发布快照',
+        actor: asset.uploader,
+        at: asset.uploadedAt,
+        change: '交付查询字段'
+      }
+    ];
+  }
+
+  // 关联素材：同事件/专题（仍走列表 API 已加载数据时由调用方补；这里用同查询结果）
+  const mappedAll = rows.map(toMediaAsset);
+  asset.related = mappedAll
+    .filter((other) => other.id !== asset.id)
+    .map((other) => {
+      let type: 'batch' | 'event' | 'similar' = 'similar';
+      if (other.event === asset.event && asset.event && asset.event !== '—') type = 'event';
+      else if (other.topic && other.topic === asset.topic) type = 'batch';
+      return {
+        id: other.id,
+        title: other.title,
+        type,
+        meta: `${other.id}${type === 'similar' ? ' · 语义相关' : ''}`
+      };
+    })
+    .slice(0, 4);
+
+  return {
+    asset,
+    versions,
+    shareLinks,
+    status,
+    message,
+    contentId
+  };
 }
 
 /** 由素材列表推导审核队列（工作流状态=待审核）。 */

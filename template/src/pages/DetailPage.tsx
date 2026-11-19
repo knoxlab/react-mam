@@ -21,6 +21,8 @@ interface Props {
   shareLinks: ShareLink[];
   loading: boolean;
   source: DataSource;
+  detailStatus?: 'ok' | 'not-found' | 'unauthorized' | 'error' | 'loading';
+  detailMessage?: string;
 }
 
 export function DetailPage({
@@ -31,7 +33,9 @@ export function DetailPage({
   versions,
   shareLinks,
   loading,
-  source
+  source,
+  detailStatus,
+  detailMessage
 }: Props) {
   const [adopted, setAdopted] = useState<Set<string>>(new Set());
 
@@ -53,8 +57,36 @@ export function DetailPage({
       <main className="main-content">
         <div className="content-area">
           <div className="empty-state">
-            <div className="title">正在从后台加载素材详情…</div>
-            <div>ID: {id}</div>
+            <div className="title">正在通过 API 加载内容详情…</div>
+            <div>
+              GET /api/v1/delivery/sites/{"{siteId}"}/contents/query · asset={id}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              登录后还将请求 /api/v1/contents/{"{contentId}"}/versions 与 shares
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!asset && detailStatus === 'not-found') {
+    return (
+      <main className="main-content">
+        <div className="content-area">
+          <div className="empty-state">
+            <div className="title">素材不存在或无权查看</div>
+            <div>
+              {detailMessage || `编号 ${id} 无对应已发布记录（权限前置过滤）`}
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: 16 }}
+              onClick={() => onNavigate({ name: 'library' })}
+            >
+              返回媒资库
+            </button>
           </div>
         </div>
       </main>
@@ -67,7 +99,9 @@ export function DetailPage({
         <div className="content-area">
           <div className="empty-state">
             <div className="title">素材不存在或无权查看</div>
-            <div>编号 {id} 无对应已发布记录（权限前置过滤）</div>
+            <div>
+              {detailMessage || `编号 ${id} 无对应已发布记录（权限前置过滤）`}
+            </div>
             <button
               type="button"
               className="btn btn-primary"
@@ -170,14 +204,22 @@ export function DetailPage({
               style={{
                 fontSize: 12,
                 fontWeight: 500,
-                color: source === 'live' ? 'var(--color-status-approved-text)' : 'var(--color-text-secondary)',
-                background: source === 'live' ? 'rgba(0,179,65,0.1)' : 'var(--color-section)',
+                color:
+                  detailStatus === 'ok'
+                    ? 'var(--color-status-approved-text)'
+                    : 'var(--color-text-secondary)',
+                background:
+                  detailStatus === 'ok' ? 'rgba(0,179,65,0.1)' : 'var(--color-section)',
                 border: '1px solid var(--color-border)',
                 padding: '4px 10px',
                 borderRadius: 12
               }}
             >
-              {source === 'live' ? 'API 实时数据' : '无数据'}
+              {loading
+                ? '详情 API 加载中…'
+                : detailStatus === 'ok'
+                  ? `详情 API${detailMessage ? ` · ${detailMessage}` : ''}`
+                  : detailMessage || '详情 API'}
             </span>
             <span className="mutex-hint">
               当前身份：{CURRENT_USER.name}（{CURRENT_USER.role}）
