@@ -719,6 +719,61 @@ a {
   color: var(--color-text-secondary);
 }
 
+/* 编目弹窗：关联媒体列表 */
+.media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.media-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-base);
+}
+
+.media-list-thumb {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.media-list-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.media-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-list-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.media-list-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .nav-item {
   padding: 10px 20px;
   color: var(--color-text-secondary);
