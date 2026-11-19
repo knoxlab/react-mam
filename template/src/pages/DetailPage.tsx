@@ -3,7 +3,6 @@ import type { Route } from '../route';
 import {
   AUDITS,
   CURRENT_USER,
-  KIND_ICON,
   KIND_LABEL,
   LEVEL_LABEL,
   STATUS_KEY,
@@ -11,6 +10,7 @@ import {
 } from '../data';
 import type { MediaAsset, ShareLink, VersionItem } from '../types';
 import type { DataSource } from '../api';
+import { KindThumb } from '../KindThumb';
 
 interface Props {
   id: string;
@@ -234,7 +234,7 @@ export function DetailPage({
             </span>
           </div>
           <div className="asset-preview">
-            {KIND_ICON[asset.kind]} {KIND_LABEL[asset.kind]}
+            <KindThumb kind={asset.kind} size="detail" title={asset.title} />
           </div>
 
           <section className="metadata-section">

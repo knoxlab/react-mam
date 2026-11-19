@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import type { Route } from '../route';
-import { KIND_ICON, KIND_LABEL, LEVEL_LABEL, STATUS_KEY, STATUS_LABEL } from '../data';
+import { KIND_LABEL, LEVEL_LABEL, STATUS_KEY, STATUS_LABEL } from '../data';
 import type { MediaAsset, SearchMode, ViewMode } from '../types';
 import type { DataSource, FolderNode } from '../api';
+import { KindThumb } from '../KindThumb';
 
 interface Props {
   kind?: string;
@@ -83,7 +84,7 @@ function AssetCard({
         }}
       />
       <div className="asset-thumbnail">
-        <span>{KIND_ICON[asset.kind]}</span>
+        <KindThumb kind={asset.kind} size="grid" title={asset.title} />
         <div className="asset-badges">
           <span className={`asset-badge badge-${STATUS_KEY[asset.status]}`}>
             {STATUS_LABEL[asset.status]}
@@ -534,7 +535,9 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
                       toggle(a.id);
                     }}
                   />
-                  <div className="list-thumbnail">{KIND_ICON[a.kind]}</div>
+                  <div className="list-thumbnail">
+                    <KindThumb kind={a.kind} size="list" title={a.title} />
+                  </div>
                   <div className="list-content">
                     <div className="list-title">{a.title}</div>
                     <div className="list-meta">

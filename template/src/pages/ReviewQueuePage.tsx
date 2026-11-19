@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import type { Route } from '../route';
-import { KIND_ICON } from '../data';
 import type { MediaAsset } from '../types';
 import { buildReviewItems, type DataSource } from '../api';
+import { KindThumb } from '../KindThumb';
 
 interface Props {
   onNavigate: (route: Route) => void;
@@ -203,7 +203,9 @@ export function ReviewQueuePage({ onNavigate, assets, loading, source }: Props) 
                 className="queue-checkbox"
                 onClick={() => !item.mutex && item.tab !== 'done' && toggle(item.asset.id)}
               />
-              <div className="queue-thumb">{KIND_ICON[item.asset.kind]}</div>
+              <div className="queue-thumb">
+                <KindThumb kind={item.asset.kind} size="queue" title={item.asset.title} />
+              </div>
               <div className="queue-info">
                 <div className="queue-title">
                   {item.asset.title}

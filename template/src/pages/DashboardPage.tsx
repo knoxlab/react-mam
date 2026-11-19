@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { Route } from '../route';
 import {
-  KIND_ICON,
   KIND_LABEL,
   METRICS,
   STATUS_KEY,
@@ -9,6 +8,7 @@ import {
 } from '../data';
 import type { ActivityItem, MediaAsset, WorkflowStatus } from '../types';
 import { workflowCounts, type DataSource } from '../api';
+import { KindThumb } from '../KindThumb';
 
 interface Props {
   onNavigate: (route: Route) => void;
@@ -26,7 +26,7 @@ function AssetCard({ asset, onClick }: { asset: MediaAsset; onClick: () => void 
   return (
     <article className="asset-card" onClick={onClick} role="button" tabIndex={0}>
       <div className="asset-thumbnail">
-        <span>{KIND_ICON[asset.kind]}</span>
+        <KindThumb kind={asset.kind} size="grid" title={asset.title} />
         <div className="asset-badges">
           <span className={`asset-badge badge-${STATUS_KEY[asset.status]}`}>
             {STATUS_LABEL[asset.status]}
