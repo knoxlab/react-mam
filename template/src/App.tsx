@@ -429,7 +429,7 @@ export function App() {
           )}
         </nav>
 
-        {/* 收起且放不下时：浮动菜单展示其余（及全部）图标 */}
+        {/* 收起且放不下时：浮动菜单仅展示未排入侧栏的其余项 */}
         {collapsed && overflow && (
           <div
             className={`sidebar-flyout${flyoutOpen ? ' is-open' : ''}`}
@@ -438,9 +438,9 @@ export function App() {
             onMouseEnter={() => setFlyoutOpen(true)}
             onMouseLeave={() => setFlyoutOpen(false)}
           >
-            <div className="flyout-section">全部导航</div>
+            <div className="flyout-section">其余 {railHidden.length} 项</div>
             <div className="flyout-group">
-              {railItems.map((item) => (
+              {railHidden.map((item) => (
                 <button
                   key={`fo-${item.id}`}
                   type="button"
@@ -459,6 +459,9 @@ export function App() {
                   {item.badge ? <span className="flyout-badge">{item.badge}</span> : null}
                 </button>
               ))}
+              {railHidden.length === 0 && (
+                <div className="flyout-empty">无更多项</div>
+              )}
             </div>
           </div>
         )}

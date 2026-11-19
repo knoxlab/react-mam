@@ -315,6 +315,12 @@ a {
   letter-spacing: 0.04em;
 }
 
+.flyout-empty {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  padding: 8px 10px;
+}
+
 .nav-icon {
   display: none;
   width: 24px;
