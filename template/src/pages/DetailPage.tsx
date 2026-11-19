@@ -26,6 +26,7 @@ import { RejectModal } from '../ui/RejectModal';
 import { ShareModal } from '../ui/ShareModal';
 import { MessageModal } from '../ui/MessageModal';
 import { AppModal } from '../ui/AppModal';
+import { TagSuggestModal } from '../ui/TagSuggestModal';
 
 function mapRole(role: string): string {
   const map: Record<string, string> = {
@@ -80,6 +81,7 @@ export function DetailPage({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [tagOpen, setTagOpen] = useState(false);
   const [msg, setMsg] = useState<{
     open: boolean;
     title?: string;
@@ -535,24 +537,7 @@ export function DetailPage({
       showToast('err', '缺少内容 ID');
       return;
     }
-    const input = window.prompt(
-      '添加标签（多个用逗号分隔）：',
-      asset.tags.join('，')
-    );
-    if (input == null) return;
-    const tags = input
-      .split(/[,，]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    void withBusy(async () => {
-      const r = await saveFieldPatch(contentId, { tags_ss: tags }, '添加/更新标签');
-      if (!r.ok) {
-        showToast('err', r.error || '保存标签失败');
-        return;
-      }
-      showToast('ok', `标签已保存：${tags.map((t) => `#${t}`).join(' ') || '（空）'}`);
-      onRefresh?.();
-    });
+    setTagOpen(true);
   }
 
   return (
@@ -1230,6 +1215,21 @@ export function DetailPage({
           assetTitle={asset.title}
           onClose={() => setShareOpen(false)}
           onIssued={onRefresh}
+        />
+      )}
+
+      {/* 添加标签 */}
+      {asset && contentId && (
+        <TagSuggestModal
+          open={tagOpen}
+          contentId={contentId}
+          asset={asset}
+          assets={assets}
+          onClose={() => setTagOpen(false)}
+          onSaved={() => {
+            showToast('ok', '标签已保存');
+            onRefresh?.();
+          }}
         />
       )}
 

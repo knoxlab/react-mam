@@ -774,6 +774,55 @@ a {
   flex-shrink: 0;
 }
 
+/* 标签选择弹窗 */
+.tag-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+  align-content: flex-start;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-base);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  transition: all 0.12s;
+}
+
+.tag-chip:hover {
+  border-color: var(--color-accent);
+}
+
+.tag-chip.selected {
+  background: rgba(0, 102, 204, 0.1);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tag-chip-reason {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  background: var(--color-section);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.tag-chip.selected .tag-chip-reason {
+  background: rgba(0, 102, 204, 0.12);
+  color: var(--color-accent);
+}
+
 .nav-item {
   padding: 10px 20px;
   color: var(--color-text-secondary);
