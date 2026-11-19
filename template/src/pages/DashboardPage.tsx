@@ -164,7 +164,12 @@ export function DashboardPage({
   const filterBarRef = useRef<HTMLDivElement>(null);
 
   const counts = useMemo(() => workflowCounts(assets), [assets]);
-  const recent = useMemo(() => assets.slice(0, 4), [assets]);
+  const recent = useMemo(() => {
+    // 最近上传：草稿与已发布按时间合并，取前 4
+    return [...assets]
+      .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''))
+      .slice(0, 4);
+  }, [assets]);
 
   useEffect(() => {
     if (!openFilter) return;

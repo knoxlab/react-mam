@@ -689,12 +689,13 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
       error: '未注入站点 ID'
     };
   }
-  const [assets, versions, links, folders, activityFeed] = await Promise.all([
+  const [publishedRows, versions, links, folders, activityFeed, adminAssets] = await Promise.all([
     queryRows(siteId, 'media_asset'),
     queryRows(siteId, 'media_version'),
     queryRows(siteId, 'share_link'),
     loadFolders(siteId),
-    loadActivities(siteId, 50)
+    loadActivities(siteId, 50),
+    loadAdminMediaAssets(siteId)
   ]);
   const base = {
     activities: activityFeed.items,
@@ -702,7 +703,7 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
     activityStatus: activityFeed.status,
     activityMessage: activityFeed.message
   };
-  if (assets === null) {
+  if (publishedRows === null && adminAssets.length === 0) {
     return {
       source: 'empty',
       assets: [],
@@ -713,10 +714,31 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
       error: '交付查询失败或无权限'
     };
   }
-  const mapped = assets.map(toMediaAsset);
+
+  // 已发布（交付）+ 管理端草稿/未发布（登录后），按 contentId 合并去重
+  const mapped: MediaAsset[] = [];
+  const seen = new Set<string>();
+  for (const row of publishedRows || []) {
+    const a = toMediaAsset(row);
+    const key = a.contentId || a.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    mapped.push(a);
+  }
+  for (const a of adminAssets) {
+    const key = a.contentId || a.id;
+    if (!key || seen.has(key)) continue;
+    // 同 asset_code 已在已发布列表时跳过（避免重复卡片）
+    if (mapped.some((p) => p.id === a.id && p.contentId !== a.contentId)) {
+      // 允许多条同码草稿并存；仅当 admin 与 published contentId 不同且 code 相同且 published 已有 → 仍加入（草稿）
+    }
+    seen.add(key);
+    mapped.push(a);
+  }
+
   for (const asset of mapped) {
     asset.related = mapped
-      .filter((other) => other.id !== asset.id)
+      .filter((other) => other.contentId !== asset.contentId && other.id !== asset.id)
       .map((other) => {
         let type: 'batch' | 'event' | 'similar' = 'similar';
         if (other.event === asset.event && asset.event && asset.event !== '—') type = 'event';
@@ -730,6 +752,7 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
       })
       .slice(0, 4);
   }
+
   return {
     source: mapped.length > 0 ? 'live' : 'empty',
     assets: mapped,
@@ -738,6 +761,80 @@ export async function loadCatalog(siteId: string): Promise<MamCatalog> {
     folders,
     ...base
   };
+}
+
+/**
+ * 管理端拉取 media_asset 全部条目（含 DRAFT），从最新版本 fieldValues 还原字段。
+ * 未登录/无权限时返回 []（前台仅显示已发布）。
+ */
+async function loadAdminMediaAssets(siteId: string): Promise<MediaAsset[]> {
+  try {
+    const ctId = await loadContentTypeId(siteId, 'media_asset');
+    if (!ctId) return [];
+    const listRes = await fetch(
+      `/api/v1/sites/${encodeURIComponent(siteId)}/content-types/${encodeURIComponent(ctId)}/contents`,
+      { headers: { Accept: 'application/json' }, credentials: 'include', cache: 'no-store' }
+    );
+    if (!listRes.ok) return [];
+    const list = (await listRes.json()) as Array<{
+      id?: string;
+      title?: string;
+      status?: string;
+      updatedAt?: string;
+      createdAt?: string;
+    }>;
+    if (!Array.isArray(list) || list.length === 0) return [];
+
+    const rows = await Promise.all(
+      list.map(async (item): Promise<ContentRow | null> => {
+        if (!item.id) return null;
+        try {
+          const vRes = await fetch(`/api/v1/contents/${encodeURIComponent(item.id)}/versions`, {
+            headers: { Accept: 'application/json' },
+            credentials: 'include',
+            cache: 'no-store'
+          });
+          let fields: Record<string, unknown> = {};
+          if (vRes.ok) {
+            const vers = (await vRes.json()) as AdminVersionRow[];
+            const latest = (vers || [])[0];
+            if (latest?.fieldValues) fields = parseFieldValues(latest.fieldValues);
+          }
+          // 内容状态映射：DRAFT 且无 workflow 字段时视为编目中
+          if (!fields.workflow_status_s && item.status === 'DRAFT') {
+            fields.workflow_status_s = 'editing';
+          }
+          if (!fields.asset_code_s && item.title) {
+            // 保留可读编码兜底
+            fields.asset_code_s = fields.asset_code_s || '';
+          }
+          return {
+            id: item.id,
+            title: item.title,
+            status: item.status,
+            updatedAt: item.updatedAt || item.createdAt,
+            createdAt: item.createdAt,
+            fields
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    return rows
+      .filter((r): r is ContentRow => r != null)
+      .map((row) => {
+        const asset = toMediaAsset(row);
+        const code = text(rowFields(row), 'asset_code_s');
+        if (code) asset.id = code;
+        // 草稿 contentId 供详情路由
+        asset.contentId = text(row, 'id');
+        return asset;
+      });
+  } catch {
+    return [];
+  }
 }
 
 export async function loadAssetByCode(
