@@ -14,6 +14,7 @@ import {
   type MamCatalog
 } from './api';
 import type { MediaAsset } from './types';
+import { SidebarUser } from './SidebarUser';
 
 function parseHash(): Route {
   const raw = (window.location.hash || '#/dashboard').replace(/^#\/?/, '');
@@ -208,6 +209,7 @@ export function App() {
             刷新 API 数据
           </button>
         </nav>
+        <SidebarUser onAuthChanged={reload} />
       </aside>
 
       {route.name === 'dashboard' && (

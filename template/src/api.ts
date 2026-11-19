@@ -46,6 +46,108 @@ export function siteIdFromLocation(): string {
   return window.__POWERCMS_SITE_ID__?.trim() || '';
 }
 
+// ---- 认证（侧栏用户区） ----
+
+export interface CurrentUser {
+  authenticated: boolean;
+  username?: string;
+  displayName?: string;
+  userId?: string;
+  roles?: string[];
+}
+
+export async function fetchCurrentUser(): Promise<CurrentUser> {
+  try {
+    const res = await fetch('/api/v1/auth/me', {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) return { authenticated: false };
+    const basic = (await res.json()) as { authenticated?: boolean; username?: string };
+    if (!basic.authenticated) return { authenticated: false };
+    let displayName = basic.username || '';
+    let userId = '';
+    let roles: string[] = [];
+    try {
+      const meRes = await fetch('/api/v1/me', {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      if (meRes.ok) {
+        const me = (await meRes.json()) as {
+          displayName?: string;
+          username?: string;
+          userId?: string;
+          organizationRoles?: string[];
+        };
+        displayName = me.displayName || me.username || displayName;
+        userId = me.userId || '';
+        roles = me.organizationRoles || [];
+      }
+    } catch {
+      /* me 可选 */
+    }
+    return {
+      authenticated: true,
+      username: basic.username,
+      displayName: displayName || basic.username,
+      userId,
+      roles
+    };
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+export async function login(
+  username: string,
+  password: string
+): Promise<{ ok: boolean; error?: string; user?: CurrentUser }> {
+  try {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, password })
+    });
+    if (!res.ok) {
+      let message = `登录失败（HTTP ${res.status}）`;
+      try {
+        const body = (await res.json()) as { message?: string };
+        if (body.message) message = body.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: message };
+    }
+    const user = await fetchCurrentUser();
+    return { ok: true, user };
+  } catch {
+    return { ok: false, error: '网络错误，无法登录' };
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/v1/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json' }
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export function avatarText(user: CurrentUser | null): string {
+  if (!user) return '?';
+  const name = (user.displayName || user.username || '').trim();
+  if (!name) return '?';
+  return name.slice(0, 1).toUpperCase();
+}
+
 interface ContentRow {
   id?: string;
   title?: string;

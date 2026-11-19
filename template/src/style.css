@@ -62,6 +62,8 @@ a {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 .sidebar-header {
@@ -78,6 +80,242 @@ a {
   flex: 1;
   overflow-y: auto;
   padding: 16px 0;
+  min-height: 0;
+}
+
+/* —— 侧栏底部用户区 —— */
+.sidebar-user {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding: 12px;
+  background: var(--color-base);
+  position: relative;
+  z-index: 5;
+}
+
+.user-login-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.user-login-btn:hover:not(:disabled) {
+  background: #0052a3;
+}
+
+.user-login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.user-block {
+  position: relative;
+}
+
+.user-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-section);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.user-trigger:hover {
+  background: #e8e9ea;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.user-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-role {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-caret {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.user-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--color-base);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  z-index: 20;
+}
+
+.user-menu-info {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.user-menu-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.user-menu-sub {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.user-menu-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-status-reject);
+}
+
+.user-menu-item:hover {
+  background: rgba(211, 47, 47, 0.06);
+}
+
+/* 登录弹窗 */
+.login-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.login-modal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-base);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.login-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.login-modal-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.login-modal-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0 4px;
+}
+
+.login-form {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.login-field input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.login-field input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.login-error {
+  font-size: 13px;
+  color: var(--color-status-reject);
+  background: rgba(211, 47, 47, 0.06);
+  border: 1px solid rgba(211, 47, 47, 0.25);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.login-hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 .nav-item {
