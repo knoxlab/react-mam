@@ -959,6 +959,98 @@ export interface AssetDetailResult {
   contentId?: string;
 }
 
+/**
+ * 审核操作：通过版本快照更新 workflow_status_s + 内容发布状态。
+ * approve → approved + PUBLISHED；reject → editing + DRAFT。
+ */
+export async function performReview(
+  siteId: string,
+  contentId: string,
+  action: 'approve' | 'reject',
+  comment?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!siteId || !contentId) return { ok: false, error: '缺少站点或内容 ID' };
+
+  // 1) 读取当前 fieldValues（最新版本）
+  let fieldValues = '{}';
+  try {
+    const verRes = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (verRes.ok) {
+      const list = (await verRes.json()) as AdminVersionRow[];
+      if (list?.[0]?.fieldValues) fieldValues = list[0].fieldValues;
+    }
+  } catch {
+    /* keep {} */
+  }
+
+  // 2) 更新 workflow_status_s 并保存新版本
+  const workflow = action === 'approve' ? 'approved' : 'editing';
+  let fields: Record<string, unknown> = {};
+  try {
+    fields = parseFieldValues(fieldValues);
+  } catch {
+    fields = {};
+  }
+  fields.workflow_status_s = workflow;
+  const note =
+    action === 'approve'
+      ? `审核通过${comment ? `：${comment}` : ''}`
+      : `驳回${comment ? `：${comment}` : ''}`;
+
+  try {
+    const save = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        fieldValues: JSON.stringify(fields),
+        note
+      })
+    });
+    if (!save.ok) {
+      let msg = `保存版本失败（HTTP ${save.status}）`;
+      try {
+        const b = (await save.json()) as { message?: string };
+        if (b.message) msg = b.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: msg };
+    }
+  } catch {
+    return { ok: false, error: '网络错误，保存版本失败' };
+  }
+
+  // 3) 内容状态：通过 → PUBLISHED；驳回 → DRAFT
+  const contentStatus = action === 'approve' ? 'PUBLISHED' : 'DRAFT';
+  try {
+    const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ status: contentStatus })
+    });
+    if (!res.ok && res.status !== 204) {
+      let msg = `更新内容状态失败（HTTP ${res.status}）`;
+      try {
+        const b = (await res.json()) as { message?: string };
+        if (b.message) msg = b.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: msg };
+    }
+  } catch {
+    return { ok: false, error: '网络错误，更新内容状态失败' };
+  }
+
+  return { ok: true };
+}
+
 interface AdminVersionRow {
   id?: string;
   version?: number;

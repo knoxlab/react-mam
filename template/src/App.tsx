@@ -583,6 +583,7 @@ export function App() {
           assets={catalog.assets}
           loading={loading}
           source={catalog.source}
+          onRefresh={reload}
         />
       )}
       {route.name === 'ai' && (
