@@ -176,9 +176,11 @@ export function App() {
             >
               {collapsed ? '»' : '«'}
             </button>
-            <div className="sidebar-title" title="融媒体媒资中心">
-              {collapsed ? '媒' : '融媒体媒资中心'}
-            </div>
+            {!collapsed && (
+              <div className="sidebar-title" title="融媒体媒资中心">
+                融媒体媒资中心
+              </div>
+            )}
           </div>
           {!collapsed && (
             <div className="sidebar-status">

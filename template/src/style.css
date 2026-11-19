@@ -78,6 +78,19 @@ a {
 
 .sidebar.is-collapsed .sidebar-header {
   padding: 12px 8px;
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar.is-collapsed .sidebar-header-row {
+  justify-content: center;
+  width: 100%;
+}
+
+.sidebar.is-collapsed .sidebar-collapse-btn {
+  width: 36px;
+  height: 32px;
+  font-size: 16px;
 }
 
 .sidebar-header-row {
@@ -121,9 +134,7 @@ a {
 }
 
 .sidebar.is-collapsed .sidebar-title {
-  font-size: 16px;
-  text-align: center;
-  width: 100%;
+  display: none;
 }
 
 .sidebar-status {
