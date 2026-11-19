@@ -184,13 +184,13 @@ a {
   position: relative;
 }
 
-/* —— 收起态悬停浮动菜单 —— */
+/* —— 收起态浮动菜单（仅 overflow 时由「更多」触发） —— */
 .sidebar-flyout {
   display: none;
   position: absolute;
   left: 100%;
   top: 52px;
-  width: 200px;
+  width: 210px;
   background: var(--color-base);
   border: 1px solid var(--color-border);
   border-left: none;
@@ -214,9 +214,15 @@ a {
   }
 }
 
-.sidebar.is-collapsed:hover .sidebar-flyout,
-.sidebar.is-collapsed:focus-within .sidebar-flyout {
+.sidebar-flyout.is-open,
+.sidebar.is-collapsed.flyout-open .sidebar-flyout {
   display: block;
+}
+
+.nav-more-btn .nav-icon {
+  font-size: 18px;
+  letter-spacing: 1px;
+  font-weight: 700;
 }
 
 .flyout-group {

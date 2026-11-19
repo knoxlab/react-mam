@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Route } from './route';
 import { DashboardPage } from './pages/DashboardPage';
 import { LibraryPage } from './pages/LibraryPage';
@@ -77,6 +77,17 @@ const EMPTY: MamCatalog = {
 
 const SIDEBAR_KEY = 'mam.sidebar.collapsed';
 
+type RailItem = {
+  id: string;
+  label: string;
+  icon: string;
+  disabled?: boolean;
+  title?: string;
+  active?: boolean;
+  badge?: number;
+  onClick?: () => void;
+};
+
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash());
   const [catalog, setCatalog] = useState<MamCatalog>(EMPTY);
@@ -91,6 +102,10 @@ export function App() {
       return false;
     }
   });
+  const [visibleCount, setVisibleCount] = useState<number>(99);
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
+  const navRef = useRef<HTMLElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const siteId = useMemo(() => siteIdFromLocation(), []);
 
   useEffect(() => {
@@ -167,9 +182,120 @@ export function App() {
     return catalog.assets.find((a) => a.id === route.id) || null;
   }, [route, detailResult, catalog.assets]);
 
+  const goMain = useCallback(
+    (key: string) => {
+      if (key === 'dashboard') go({ name: 'dashboard' });
+      else if (key === 'library') go({ name: 'library' });
+      else if (key === 'upload') go({ name: 'upload' });
+      else if (key === 'review') go({ name: 'review' });
+      else if (key === 'ai') go({ name: 'ai' });
+    },
+    [go]
+  );
+
+  const goKind = useCallback(
+    (key: string) => go(key === 'all' ? { name: 'library' } : { name: 'library', kind: key }),
+    [go]
+  );
+
+  /** 收起态扁平图标列表（主功能 + 分类 + 管理 + 刷新） */
+  const railItems: RailItem[] = useMemo(() => {
+    const main: RailItem[] = NAV_MAIN.map((item) => ({
+      id: item.key,
+      label: item.label,
+      icon: item.icon,
+      active: activeNav === item.key,
+      badge: item.key === 'review' && reviewCount > 0 ? reviewCount : undefined,
+      onClick: () => goMain(item.key)
+    }));
+    const kinds: RailItem[] = NAV_KINDS.map((item) => {
+      const libKind = route.name === 'library' && route.kind ? route.kind : 'all';
+      return {
+        id: `kind-${item.key}`,
+        label: item.label,
+        icon: item.icon,
+        active: route.name === 'library' && libKind === item.key,
+        onClick: () => goKind(item.key)
+      };
+    });
+    const admin: RailItem[] = NAV_ADMIN.map((item) => ({
+      id: `adm-${item.label}`,
+      label: item.label,
+      icon: item.icon,
+      disabled: item.disabled,
+      title: item.title
+    }));
+    const refresh: RailItem[] = [
+      { id: 'refresh', label: '刷新 API 数据', icon: '↻', onClick: reload }
+    ];
+    return [...main, ...kinds, ...admin, ...refresh];
+  }, [
+    activeNav,
+    reviewCount,
+    route,
+    goMain,
+    goKind,
+    reload
+  ]);
+
+  const overflow = collapsed && visibleCount < railItems.length;
+
+  // 收起时测量：尽量多放图标，放不下则预留「更多」按钮
+  useEffect(() => {
+    if (!collapsed) {
+      setVisibleCount(99);
+      setFlyoutOpen(false);
+      return;
+    }
+    const measure = () => {
+      const nav = navRef.current;
+      if (!nav) return;
+      const moreH = 48;
+      const itemH = 40;
+      const avail = nav.clientHeight - moreH;
+      const max = Math.max(1, Math.floor(avail / itemH));
+      setVisibleCount(Math.min(railItems.length, max));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (ro && navRef.current) ro.observe(navRef.current);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [collapsed, railItems.length]);
+
+  // 点击外部关闭浮动菜单
+  useEffect(() => {
+    if (!flyoutOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (sidebarRef.current?.contains(t)) return;
+      setFlyoutOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFlyoutOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [flyoutOpen]);
+
+  const railVisible = collapsed ? railItems.slice(0, visibleCount) : [];
+  const railHidden = collapsed ? railItems.slice(visibleCount) : [];
+
   return (
     <div className={`app-container${collapsed ? ' sidebar-collapsed' : ''}`}>
-      <aside className={`sidebar${collapsed ? ' is-collapsed' : ''}`}>
+      <aside
+        ref={(el) => {
+          sidebarRef.current = el;
+        }}
+        className={`sidebar${collapsed ? ' is-collapsed' : ''}${flyoutOpen ? ' flyout-open' : ''}`}
+      >
         <div className="sidebar-header">
           <div className="sidebar-header-row">
             <button
@@ -200,37 +326,31 @@ export function App() {
           )}
         </div>
 
-        <nav className="sidebar-nav">
-          {NAV_MAIN.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`nav-item${activeNav === item.key ? ' active' : ''}`}
-              title={collapsed ? item.label : undefined}
-              onClick={() => {
-                if (item.key === 'dashboard') go({ name: 'dashboard' });
-                else if (item.key === 'library') go({ name: 'library' });
-                else if (item.key === 'upload') go({ name: 'upload' });
-                else if (item.key === 'review') go({ name: 'review' });
-                else go({ name: 'ai' });
-              }}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span className="nav-label">{item.label}</span>
-              {!collapsed && item.key === 'review' && reviewCount > 0 ? (
-                <span className="nav-count">({reviewCount})</span>
-              ) : null}
-              {collapsed && item.key === 'review' && reviewCount > 0 ? (
-                <span className="nav-dot" aria-label={`${reviewCount} 待审`} />
-              ) : null}
-            </button>
-          ))}
-
-          {/* 展开态：分类 / 管理 / 数据 */}
+        <nav
+          className="sidebar-nav"
+          ref={(el) => {
+            navRef.current = el;
+          }}
+        >
+          {/* 展开态：完整文字菜单 */}
           {!collapsed && (
             <>
+              {NAV_MAIN.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`nav-item${activeNav === item.key ? ' active' : ''}`}
+                  onClick={() => goMain(item.key)}
+                >
+                  <span className="nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="nav-label">{item.label}</span>
+                  {item.key === 'review' && reviewCount > 0 ? (
+                    <span className="nav-count">({reviewCount})</span>
+                  ) : null}
+                </button>
+              ))}
               <div className="nav-section-title">分类</div>
               {NAV_KINDS.map((item) => (
                 <button
@@ -239,9 +359,7 @@ export function App() {
                   className={`nav-item${
                     route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
                   }`}
-                  onClick={() =>
-                    go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
-                  }
+                  onClick={() => goKind(item.key)}
                 >
                   <span className="nav-icon" aria-hidden="true">
                     {item.icon}
@@ -249,7 +367,6 @@ export function App() {
                   <span className="nav-label">{item.label}</span>
                 </button>
               ))}
-
               <div className="nav-section-title">管理</div>
               {NAV_ADMIN.map((item) => (
                 <button
@@ -265,7 +382,6 @@ export function App() {
                   <span className="nav-label">{item.label}</span>
                 </button>
               ))}
-
               <div className="nav-section-title">数据</div>
               <button type="button" className="nav-item" onClick={reload}>
                 <span className="nav-icon" aria-hidden="true">
@@ -275,84 +391,74 @@ export function App() {
               </button>
             </>
           )}
+
+          {/* 收起态：尽量多图标；放不下时显示「更多」 */}
+          {collapsed &&
+            railVisible.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`nav-item${item.active ? ' active' : ''}`}
+                disabled={item.disabled}
+                title={item.label}
+                onClick={item.onClick}
+              >
+                <span className="nav-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span className="nav-label">{item.label}</span>
+                {item.badge ? <span className="nav-dot" aria-label={`${item.badge}`} /> : null}
+              </button>
+            ))}
+
+          {collapsed && overflow && (
+            <button
+              type="button"
+              className={`nav-item nav-more-btn${flyoutOpen ? ' active' : ''}`}
+              title="更多菜单"
+              aria-expanded={flyoutOpen}
+              aria-haspopup="menu"
+              onClick={() => setFlyoutOpen(true)}
+              onMouseEnter={() => setFlyoutOpen(true)}
+            >
+              <span className="nav-icon" aria-hidden="true">
+                ⋯
+              </span>
+              <span className="nav-label">更多</span>
+            </button>
+          )}
         </nav>
 
-        {/* 收起态：悬停浮动菜单，展示全部图标+名称 */}
-        {collapsed && (
-          <div className="sidebar-flyout" role="menu" aria-label="展开导航菜单">
+        {/* 收起且放不下时：浮动菜单展示其余（及全部）图标 */}
+        {collapsed && overflow && (
+          <div
+            className={`sidebar-flyout${flyoutOpen ? ' is-open' : ''}`}
+            role="menu"
+            aria-label="更多导航"
+            onMouseEnter={() => setFlyoutOpen(true)}
+            onMouseLeave={() => setFlyoutOpen(false)}
+          >
+            <div className="flyout-section">全部导航</div>
             <div className="flyout-group">
-              {NAV_MAIN.map((item) => (
+              {railItems.map((item) => (
                 <button
-                  key={`f-${item.key}`}
+                  key={`fo-${item.id}`}
                   type="button"
-                  className={`flyout-item${activeNav === item.key ? ' active' : ''}`}
+                  className={`flyout-item${item.active ? ' active' : ''}`}
+                  disabled={item.disabled}
+                  title={item.title || item.label}
                   onClick={() => {
-                    if (item.key === 'dashboard') go({ name: 'dashboard' });
-                    else if (item.key === 'library') go({ name: 'library' });
-                    else if (item.key === 'upload') go({ name: 'upload' });
-                    else if (item.key === 'review') go({ name: 'review' });
-                    else go({ name: 'ai' });
+                    item.onClick?.();
+                    setFlyoutOpen(false);
                   }}
                 >
                   <span className="flyout-icon" aria-hidden="true">
                     {item.icon}
                   </span>
                   <span className="flyout-label">{item.label}</span>
-                  {item.key === 'review' && reviewCount > 0 && (
-                    <span className="flyout-badge">{reviewCount}</span>
-                  )}
+                  {item.badge ? <span className="flyout-badge">{item.badge}</span> : null}
                 </button>
               ))}
-            </div>
-
-            <div className="flyout-divider" />
-            <div className="flyout-section">分类</div>
-            <div className="flyout-group">
-              {NAV_KINDS.map((item) => (
-                <button
-                  key={`f-kind-${item.key}`}
-                  type="button"
-                  className={`flyout-item${
-                    route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
-                  }`}
-                  onClick={() =>
-                    go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
-                  }
-                >
-                  <span className="flyout-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="flyout-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flyout-divider" />
-            <div className="flyout-section">管理</div>
-            <div className="flyout-group">
-              {NAV_ADMIN.map((item) => (
-                <button
-                  key={`f-adm-${item.label}`}
-                  type="button"
-                  className="flyout-item"
-                  disabled={item.disabled}
-                >
-                  <span className="flyout-icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="flyout-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flyout-divider" />
-            <div className="flyout-group">
-              <button type="button" className="flyout-item" onClick={reload}>
-                <span className="flyout-icon" aria-hidden="true">
-                  ↻
-                </span>
-                <span className="flyout-label">刷新 API 数据</span>
-              </button>
             </div>
           </div>
         )}
