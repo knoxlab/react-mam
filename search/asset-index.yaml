@@ -1,0 +1,47 @@
+contentType: media_asset
+description: >
+  媒资库统一检索（FR-GOV-004）：目录/属性/标签/权限/自然语言语义。
+  权限前置过滤——无权内容不进入结果或摘要。前台交付查询拉回后页面内过滤；
+  全库与语义检索依赖管理端索引。
+query:
+  endpoint: /api/v1/delivery/sites/{siteId}/contents/query
+  params:
+    contentType: media_asset
+    limit: 50
+    orderBy: updatedAt
+    status: PUBLISHED
+filters:
+  - field: asset_kind_s
+    label: 素材类型
+  - field: workflow_status_s
+    label: 工作流状态
+  - field: security_level_s
+    label: 密级
+  - field: copyright_status_s
+    label: 版权状态
+  - field: event_s
+    label: 事件
+  - field: channel_s
+    label: 栏目
+  - field: topic_group_s
+    label: 专题
+  - field: place_s
+    label: 地点
+  - field: subject_s
+    label: 主题
+  - field: persons_ss
+    label: 人物
+    note: TAG 不能作为服务端筛选字段，前台在已加载结果里过滤。
+  - field: tags_ss
+    label: 人工标签
+  - field: ai_tags_ss
+    label: AI 标签
+sort:
+  - updatedAt
+  - captured_at_dt
+  - title
+  - file_size_i
+  - asset_kind_s
+semantic:
+  enabled: true
+  note: 智能检索模式（自然语言）；权限过滤发生在召回之前（FR-GOV-004）。

@@ -1,0 +1,26 @@
+schemaVersion: "1.0"
+packageId: com.powercms.samples.react-mam
+name: 融媒体媒资中心
+version: 1.0.0
+cmsVersionRange: ">=12.0.0"
+siteKey: react-mam
+vendor:
+  name: PowerCMS Samples
+  contact: samples@powercms.local
+license:
+  spdx: MIT
+  name: MIT License
+templateRuntime:
+  type: REACT
+  nodeVersion: "20"
+entrypoints:
+  build: npm run build
+  output: dist
+requiredCapabilities:
+  - content-type
+  - template-react
+  - media
+  - search
+  - workflow
+# checksums 与 signature 由打包步骤注入（scripts/validate-samples.ps1）：
+# 源码目录本身不含摘要，必须经打包后再导入。

@@ -1,0 +1,42 @@
+code: share_link
+name: 素材分享链接
+description: >
+  有效期授权的替代方案（FR-GOV-014 / 规格 5.4 方案 c）：到期、限次、吊销。
+  不保存完整令牌；下载由交付接口按短时凭证签发。
+fields:
+  - code: asset_code_s
+    name: 资产编码
+    fieldType: STRING
+    required: true
+    groupName: 链接
+    filterable: true
+    adminIndex: true
+  - code: token_hint_s
+    name: 令牌尾号
+    fieldType: STRING
+    groupName: 链接
+    helpText: 只保存令牌末四位，不能当作下载凭证。
+  - code: audience_s
+    name: 使用方
+    fieldType: STRING
+    required: true
+    groupName: 链接
+  - code: expires_at_dt
+    name: 失效时间
+    fieldType: DATE_TIME
+    required: true
+    groupName: 链接
+    sortable: true
+  - code: max_downloads_i
+    name: 最大下载次数
+    fieldType: INTEGER
+    groupName: 链接
+  - code: used_count_i
+    name: 已用次数
+    fieldType: INTEGER
+    groupName: 链接
+  - code: revoked_b
+    name: 已吊销
+    fieldType: BOOLEAN
+    groupName: 链接
+    filterable: true

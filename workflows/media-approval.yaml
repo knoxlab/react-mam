@@ -1,0 +1,45 @@
+code: media-approval
+name: 媒体素材审批
+description: >
+  媒体素材入库与审核工作流（对应规格 5.1 入库流程）。
+  站点包导入不会自动创建工作流，请在管理端按本定义配置；
+  四眼互斥须在 L2 显式开启 peerReviewRequired（FR-GOV-012 / AC-GOV-002）。
+states:
+  - code: editing
+    name: 编目中
+  - code: review
+    name: 待审核
+  - code: approved
+    name: 已通过
+  - code: rejected
+    name: 已驳回
+  - code: archived
+    name: 已归档
+transitions:
+  - from: editing
+    to: review
+    action: 提交审核
+    roles: [editor]
+  - from: review
+    to: approved
+    action: 通过
+    roles: [approver]
+    note: 四眼互斥：不得终审本人提交或编目素材
+  - from: review
+    to: rejected
+    action: 驳回
+    roles: [approver]
+    note: 驳回必填意见，回到编目中并留痕
+  - from: rejected
+    to: editing
+    action: 退回修改
+    roles: [editor]
+  - from: approved
+    to: archived
+    action: 归档
+    roles: [media-admin]
+  - from: archived
+    to: approved
+    action: 授权复用
+    roles: [media-admin]
+    note: 归档复用保留索引与来源（FR-GOV-015）

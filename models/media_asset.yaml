@@ -1,0 +1,305 @@
+code: media_asset
+name: 媒体素材
+description: >
+  融媒体统一素材目录（FR-GOV-002）。覆盖图片、视频、音频、三维模型与文档；
+  二进制由站点预置 media_* 模型存储，本模型保存可检索元数据与七维编目字段。
+fields:
+  - code: asset_code_s
+    name: 资产编码
+    fieldType: STRING
+    required: true
+    groupName: 标识
+    uniqueField: true
+    adminIndex: true
+    publicIndex: true
+    filterable: true
+  - code: asset_kind_s
+    name: 素材类型
+    fieldType: ENUM
+    required: true
+    groupName: 标识
+    adminIndex: true
+    publicIndex: true
+    filterable: true
+    sortable: true
+    fieldConfig:
+      options:
+        - value: image
+          label: 图片
+        - value: video
+          label: 视频
+        - value: audio
+          label: 音频
+        - value: model3d
+          label: 三维模型
+        - value: document
+          label: 文档
+  - code: summary_t
+    name: 摘要
+    fieldType: LONG_TEXT
+    required: true
+    groupName: 描述
+    publicIndex: true
+    highlight: true
+  - code: body_t
+    name: 正文/说明
+    fieldType: LONG_TEXT
+    groupName: 描述
+  - code: source_s
+    name: 来源
+    fieldType: STRING
+    required: true
+    groupName: 描述
+    helpText: 上传者≠来源；无来源内容不得进入发布栏目（规格 3.2）。
+    filterable: true
+  - code: mime_type_s
+    name: MIME 类型
+    fieldType: STRING
+    groupName: 文件
+    filterable: true
+  - code: file_size_i
+    name: 文件大小
+    fieldType: INTEGER
+    groupName: 文件
+    sortable: true
+    helpText: 单位为字节。
+  - code: resolution_s
+    name: 分辨率/规格
+    fieldType: STRING
+    groupName: 文件
+    helpText: 如 3840×2160、1920×1080、模型面数等。
+  - code: thumbnail_url_s
+    name: 预览图
+    fieldType: IMAGE
+    groupName: 文件
+    helpText: 列表卡片预览；留空时按类型回退图标。
+  - code: media_items
+    name: 关联媒体
+    fieldType: REPEAT_GROUP
+    groupName: 文件
+    fieldConfig:
+      minItems: 0
+      maxItems: 50
+    fields:
+      - code: media_storage_uri_s
+        name: 媒体原件
+        fieldType: MEDIA_REF
+        fieldConfig:
+          allowedKinds:
+            - image
+            - video
+            - audio
+            - document
+          allowedContentTypes:
+            - media_image
+            - media_video
+            - media_audio
+            - media_document
+      - code: media_title_s
+        name: 媒体标题
+        fieldType: STRING
+      - code: media_kind_s
+        name: 媒体类型
+        fieldType: ENUM
+        fieldConfig:
+          options:
+            - value: image
+              label: 图片
+            - value: video
+              label: 视频
+            - value: audio
+              label: 音频
+            - value: document
+              label: 文档
+            - value: other
+              label: 其他
+  # —— 七维编目（FR-GOV-011 P0 / AC-GOV-001）——
+  - code: event_s
+    name: 事件
+    fieldType: STRING
+    groupName: 七维编目
+    publicIndex: true
+    filterable: true
+    helpText: 字典树由 L2 配置导入。
+  - code: channel_s
+    name: 栏目
+    fieldType: STRING
+    groupName: 七维编目
+    publicIndex: true
+    filterable: true
+  - code: topic_group_s
+    name: 专题
+    fieldType: STRING
+    groupName: 七维编目
+    publicIndex: true
+    filterable: true
+  - code: place_s
+    name: 地点
+    fieldType: STRING
+    groupName: 七维编目
+    publicIndex: true
+    filterable: true
+  - code: persons_ss
+    name: 人物
+    fieldType: TAG
+    groupName: 七维编目
+    publicIndex: true
+  - code: subject_s
+    name: 主题
+    fieldType: STRING
+    groupName: 七维编目
+    publicIndex: true
+    filterable: true
+  - code: captured_at_dt
+    name: 拍摄/发生时间
+    fieldType: DATE_TIME
+    groupName: 七维编目
+    sortable: true
+    filterable: true
+    helpText: 时间维编目字段；列表时间轴视图按此排序。
+  # —— 状态 / 密级 / 版权 ——
+  - code: workflow_status_s
+    name: 工作流状态
+    fieldType: ENUM
+    required: true
+    groupName: 治理
+    adminIndex: true
+    publicIndex: true
+    filterable: true
+    sortable: true
+    fieldConfig:
+      options:
+        - value: editing
+          label: 编目中
+        - value: review
+          label: 待审核
+        - value: approved
+          label: 已通过
+        - value: archived
+          label: 已归档
+  - code: security_level_s
+    name: 密级
+    fieldType: ENUM
+    required: true
+    groupName: 治理
+    adminIndex: true
+    publicIndex: true
+    filterable: true
+    fieldConfig:
+      options:
+        - value: public
+          label: 公开
+        - value: internal
+          label: 内部
+        - value: sensitive
+          label: 敏感
+  - code: copyright_status_s
+    name: 版权状态
+    fieldType: ENUM
+    required: true
+    groupName: 版权
+    adminIndex: true
+    publicIndex: true
+    filterable: true
+    helpText: 必填；未确认版权仅内部可见，发布门卫校验 + 人工终审（FR-GOV-013 / 规格 5.4）。
+    fieldConfig:
+      options:
+        - value: confirmed
+          label: 已确认
+        - value: pending
+          label: 未确认
+        - value: third-party
+          label: 第三方授权
+  - code: copyright_owner_s
+    name: 版权所有方
+    fieldType: STRING
+    groupName: 版权
+    filterable: true
+    adminIndex: true
+  - code: license_s
+    name: 授权范围
+    fieldType: ENUM
+    groupName: 版权
+    filterable: true
+    fieldConfig:
+      options:
+        - value: internal
+          label: 内部使用
+        - value: all-rights
+          label: 保留所有权利
+        - value: cc-by
+          label: CC BY
+        - value: public-domain
+          label: 公有领域
+  - code: license_until_dt
+    name: 授权期限
+    fieldType: DATE_TIME
+    groupName: 版权
+    helpText: 版权口径的授权期限，≠ ACL 有效期（ACL 无有效期字段）。
+  - code: tags_ss
+    name: 人工标签
+    fieldType: TAG
+    groupName: 分类
+    publicIndex: true
+  - code: ai_tags_ss
+    name: AI 标签
+    fieldType: TAG
+    groupName: 分类
+    publicIndex: true
+    helpText: 建议态，人工采纳后生效（FR-GOV-017/018 治理口径）。
+  - code: sensitive_flag_b
+    name: 敏感提示
+    fieldType: BOOLEAN
+    groupName: 治理
+    filterable: true
+    helpText: AI 敏感提示仅进入人工复核队列，不自动阻断（FR-GOV-017）。
+  - code: uploader_s
+    name: 上传者
+    fieldType: STRING
+    groupName: 标识
+    filterable: true
+    adminIndex: true
+  - code: version_s
+    name: 当前版本
+    fieldType: STRING
+    groupName: 标识
+    helpText: 不可变快照版本标签，如 v3；回滚以新版本实现（FR-GOV-003）。
+layout:
+  tabs:
+    - title: 关联媒体
+      fields:
+        - media_items
+    - title: 素材编目
+      fields:
+        - title_s
+        - asset_code_s
+        - asset_kind_s
+        - summary_t
+        - body_t
+        - source_s
+        - mime_type_s
+        - file_size_i
+        - resolution_s
+        - thumbnail_url_s
+        - captured_at_dt
+        - tags_ss
+        - ai_tags_ss
+        - uploader_s
+        - version_s
+    - title: 七维编目
+      fields:
+        - event_s
+        - channel_s
+        - topic_group_s
+        - place_s
+        - persons_ss
+        - subject_s
+    - title: 治理与版权
+      fields:
+        - workflow_status_s
+        - security_level_s
+        - copyright_status_s
+        - copyright_owner_s
+        - license_s
+        - license_until_dt
+        - sensitive_flag_b

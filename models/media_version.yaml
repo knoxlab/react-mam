@@ -1,0 +1,38 @@
+code: media_version
+name: 素材版本
+description: 媒体素材的业务版本快照（FR-GOV-003）。回滚以「基于历史版本新建」实现，不覆盖历史。
+fields:
+  - code: asset_code_s
+    name: 资产编码
+    fieldType: STRING
+    required: true
+    groupName: 版本
+    adminIndex: true
+    filterable: true
+  - code: version_label_s
+    name: 版本号
+    fieldType: STRING
+    required: true
+    groupName: 版本
+  - code: change_note_t
+    name: 变更说明
+    fieldType: LONG_TEXT
+    required: true
+    groupName: 版本
+  - code: changed_fields_ss
+    name: 变更字段
+    fieldType: TAG
+    groupName: 版本
+    helpText: 字段差异列表，供对比差异视图。
+  - code: storage_uri_s
+    name: 该版本存储地址
+    fieldType: STRING
+    groupName: 文件
+  - code: file_size_i
+    name: 文件大小
+    fieldType: INTEGER
+    groupName: 文件
+  - code: actor_s
+    name: 提交人
+    fieldType: STRING
+    groupName: 版本
