@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Route } from '../route';
 import { KIND_LABEL, LEVEL_LABEL, STATUS_KEY, STATUS_LABEL } from '../data';
 import type { MediaAsset, SearchMode, ViewMode } from '../types';
 import type { DataSource, FolderNode } from '../api';
 import { KindThumb } from '../KindThumb';
+
+const PAGE_SIZE = 12;
 
 interface Props {
   kind?: string;
@@ -131,6 +133,12 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dims, setDims] = useState<Record<string, string>>({});
   const [folderPick, setFolderPick] = useState('');
+  const [page, setPage] = useState(1);
+
+  // 筛选条件变化时回到第 1 页
+  useEffect(() => {
+    setPage(1);
+  }, [query, typeKey, statusKey, dims, folderPick, mode, view]);
 
   const dimOptions = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -186,26 +194,33 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
     return list;
   }, [assets, typeKey, statusKey, dims, query, mode, folderPick, folders]);
 
-  const grouped = useMemo(() => {
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, safePage]);
+
+  const groupedPage = useMemo(() => {
     if (!groupTopic) return null;
     const map = new Map<string, MediaAsset[]>();
-    filtered.forEach((a) => {
+    pageItems.forEach((a) => {
       const key = a.topic || '未分专题';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(a);
     });
     return Array.from(map.entries());
-  }, [groupTopic, filtered]);
+  }, [groupTopic, pageItems]);
 
-  const timelineGroups = useMemo(() => {
+  const timelinePage = useMemo(() => {
     const map = new Map<string, MediaAsset[]>();
-    filtered.forEach((a) => {
+    pageItems.forEach((a) => {
       const key = (a.capturedAt || a.uploadedAt || '未知日期').slice(0, 10);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(a);
     });
     return Array.from(map.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
-  }, [filtered]);
+  }, [pageItems]);
 
   // 栏目树：优先 delivery folders，否则从素材七维聚合
   const tree = useMemo(() => {
@@ -509,12 +524,12 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
             </div>
           )}
 
-          {!loading && view === 'grid' && !groupTopic && renderCards(filtered)}
+          {!loading && view === 'grid' && !groupTopic && renderCards(pageItems)}
 
           {!loading &&
             view === 'grid' &&
             groupTopic &&
-            grouped?.map(([topic, list]) => (
+            groupedPage?.map(([topic, list]) => (
               <div key={topic} className="group-block">
                 <div className="group-title">
                   {topic === '未分专题' ? '未分专题' : `专题：${topic}`}
@@ -526,7 +541,7 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
 
           {!loading && view === 'list' && (
             <div className="asset-list">
-              {filtered.map((a) => (
+              {pageItems.map((a) => (
                 <div
                   key={a.contentId || a.id}
                   className={`asset-list-item${selected.has(a.id) ? ' selected' : ''}`}
@@ -563,7 +578,7 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
 
           {!loading && view === 'timeline' && (
             <div className="timeline-view">
-              {timelineGroups.map(([date, list]) => (
+              {timelinePage.map(([date, list]) => (
                 <div key={date}>
                   <div className="timeline-date">{date}</div>
                   <div className="timeline-items">{renderCards(list)}</div>
@@ -572,31 +587,71 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
             </div>
           )}
 
-          <div
-            style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 32 }}
-            className="pagination"
-          >
-            <button type="button" className="action-btn" disabled>
-              上一页
-            </button>
-            <button
-              type="button"
-              className="action-btn"
+          {!loading && filtered.length > 0 && totalPages > 1 && (
+            <div
+              style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 32 }}
+              className="pagination"
+            >
+              <button
+                type="button"
+                className="action-btn"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                上一页
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((n) => n === 1 || n === totalPages || Math.abs(n - safePage) <= 2)
+                .map((n, idx, arr) => (
+                  <React.Fragment key={n}>
+                    {idx > 0 && n - arr[idx - 1] > 1 && (
+                      <span style={{ color: 'var(--color-text-secondary)', alignSelf: 'center' }}>
+                        …
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="action-btn"
+                      style={
+                        n === safePage
+                          ? {
+                              background: 'var(--color-accent)',
+                              color: '#fff',
+                              borderColor: 'var(--color-accent)'
+                            }
+                          : undefined
+                      }
+                      onClick={() => setPage(n)}
+                    >
+                      {n}
+                    </button>
+                  </React.Fragment>
+                ))}
+              <button
+                type="button"
+                className="action-btn"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                下一页
+              </button>
+            </div>
+          )}
+
+          {!loading && filtered.length > 0 && (
+            <div
               style={{
-                background: 'var(--color-accent)',
-                color: '#fff',
-                borderColor: 'var(--color-accent)'
+                textAlign: 'center',
+                marginTop: 12,
+                fontSize: 12,
+                color: 'var(--color-text-secondary)',
+                fontFamily: 'var(--mono)'
               }}
             >
-              1
-            </button>
-            <button type="button" className="action-btn">
-              2
-            </button>
-            <button type="button" className="action-btn">
-              下一页
-            </button>
-          </div>
+              共 {filtered.length} 条 · 第 {safePage}/{totalPages} 页
+              {totalPages === 1 ? '（仅 1 页）' : ''}
+            </div>
+          )}
         </div>
       </main>
     </>
