@@ -848,6 +848,107 @@ export async function loadAssetByCode(
 
 export type DetailStatus = 'ok' | 'not-found' | 'unauthorized' | 'error' | 'loading';
 
+export interface ContentOperation {
+  action: string;
+  at: string;
+  actor: string;
+  detail: string;
+  /** version = 版本历史；audit = 审计事件 */
+  source: 'version' | 'audit';
+}
+
+/** 详情「操作记录」：内容版本历史 + 站点审计中 objectId 命中的事件（均来自后台）。 */
+export async function loadContentOperations(
+  siteId: string,
+  contentId: string
+): Promise<ContentOperation[]> {
+  if (!contentId) return [];
+  const ops: ContentOperation[] = [];
+
+  // 1) 版本历史（GET /contents/{id}/versions）
+  try {
+    const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      const list = (await res.json()) as AdminVersionRow[];
+      for (const row of list || []) {
+        const at = (row.createdAt || '').replace('T', ' ').slice(0, 19);
+        const actor = row.createdByName || row.createdBy || '系统';
+        let action = '保存版本';
+        if (row.published) action = '发布';
+        else if (row.revertedFrom != null) action = `恢复自 v${row.revertedFrom}`;
+        else if (/初始/.test(row.note || '')) action = '创建内容';
+        else if (/提交|审核/.test(row.note || '')) action = row.note || '提交审核';
+        else if (row.note) action = row.note;
+        ops.push({
+          action,
+          at,
+          actor,
+          detail: `版本 v${row.version}${row.published ? ' · 发布版本' : ''}${row.note ? ` · ${row.note}` : ''}`,
+          source: 'version'
+        });
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 2) 站点审计中绑定到本内容的事件（objectId 匹配）
+  if (siteId) {
+    try {
+      const res = await fetch(
+        `/api/v1/sites/${encodeURIComponent(siteId)}/dashboard/activity?limit=100`,
+        {
+          headers: { Accept: 'application/json' },
+          credentials: 'include',
+          cache: 'no-store'
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          items?: {
+            occurredAt?: string;
+            actorName?: string;
+            actor?: string;
+            action?: string;
+            objectId?: string;
+            objectType?: string;
+            title?: string;
+            result?: string;
+          }[];
+        };
+        for (const item of data.items || []) {
+          if (!item.objectId || item.objectId !== contentId) continue;
+          ops.push({
+            action: item.action || '操作',
+            at: (item.occurredAt || '').replace('T', ' ').slice(0, 19),
+            actor: item.actorName || item.actor || '系统',
+            detail: `${item.objectType || '对象'}${item.title ? ` · ${item.title}` : ''}${
+              item.result && item.result !== 'SUCCESS' ? ` · ${item.result}` : ''
+            }`,
+            source: 'audit'
+          });
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 去重：同 action+at 优先 audit
+  const seen = new Set<string>();
+  ops.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return ops.filter((op) => {
+    const key = `${op.at}|${op.action}|${op.actor}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export interface AssetDetailResult {
   asset: MediaAsset | null;
   versions: VersionItem[];

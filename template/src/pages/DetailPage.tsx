@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Route } from '../route';
 import {
-  AUDITS,
   CURRENT_USER,
   KIND_LABEL,
   LEVEL_LABEL,
@@ -9,7 +8,7 @@ import {
   STATUS_LABEL
 } from '../data';
 import type { MediaAsset, ShareLink, VersionItem } from '../types';
-import type { DataSource } from '../api';
+import { loadContentOperations, siteIdFromLocation, type ContentOperation, type DataSource } from '../api';
 import { KindThumb } from '../KindThumb';
 
 interface Props {
@@ -38,6 +37,38 @@ export function DetailPage({
   detailMessage
 }: Props) {
   const [adopted, setAdopted] = useState<Set<string>>(new Set());
+  const [operations, setOperations] = useState<ContentOperation[]>([]);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [opsError, setOpsError] = useState('');
+  const siteId = useMemo(() => siteIdFromLocation(), []);
+
+  const contentKey = asset?.contentId || (asset && /^[0-9a-f-]{36}$/i.test(id) ? id : '') || '';
+
+  useEffect(() => {
+    if (!contentKey) {
+      setOperations([]);
+      setOpsError('');
+      return;
+    }
+    let cancelled = false;
+    setOpsLoading(true);
+    setOpsError('');
+    loadContentOperations(siteId, contentKey)
+      .then((ops) => {
+        if (cancelled) return;
+        setOperations(ops);
+        if (ops.length === 0) setOpsError('后台暂无该内容的版本或审计记录');
+      })
+      .catch(() => {
+        if (!cancelled) setOpsError('操作记录加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setOpsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId, contentKey]);
 
   const related = useMemo(() => {
     if (!asset) return [];
@@ -446,34 +477,65 @@ export function DetailPage({
           </section>
 
           <section className="audit-section">
-            <h2 className="section-title">操作记录</h2>
-            <div className="audit-timeline">
-              <div className="audit-item">
-                <div className="audit-header">
-                  <div className="audit-action">内容加载</div>
-                  <div className="audit-time">{asset.uploadedAt || '—'}</div>
-                </div>
-                <div className="audit-details">
-                  <span className="audit-user">前台 API</span> 经交付查询加载本素材
-                  <br />
-                  GET /api/v1/delivery/sites/…/contents/query · status=PUBLISHED
-                </div>
+            <h2 className="section-title">
+              操作记录
+              <span className="sub">
+                {opsLoading
+                  ? '加载中…'
+                  : operations.length > 0
+                    ? `后台 API · ${operations.length} 条`
+                    : opsError || '无记录'}
+              </span>
+            </h2>
+            {opsLoading && (
+              <div className="empty-state">
+                <div className="title">正在从后台加载操作记录…</div>
+                <div>GET /api/v1/contents/{"{contentId}"}/versions + dashboard/activity</div>
               </div>
-              {AUDITS.slice(0, 5).map((a, idx) => (
-                <div key={idx} className="audit-item">
-                  <div className="audit-header">
-                    <div className="audit-action">{a.action}</div>
-                    <div className="audit-time">{a.at}</div>
+            )}
+            {!opsLoading && operations.length === 0 && (
+              <div className="empty-state">
+                <div className="title">暂无操作记录</div>
+                <div>{opsError || '创建、保存、发布等操作后此处会显示后台记录。'}</div>
+              </div>
+            )}
+            {!opsLoading && operations.length > 0 && (
+              <div className="audit-timeline">
+                {operations.map((a, idx) => (
+                  <div key={`${a.at}-${a.action}-${idx}`} className="audit-item">
+                    <div className="audit-header">
+                      <div className="audit-action">
+                        {a.action}
+                        <span
+                          className="ai-badge"
+                          style={{
+                            marginLeft: 8,
+                            background:
+                              a.source === 'audit'
+                                ? 'rgba(233,30,99,0.1)'
+                                : 'rgba(0,102,204,0.1)',
+                            color:
+                              a.source === 'audit'
+                                ? 'var(--color-status-review-text)'
+                                : 'var(--color-accent)'
+                          }}
+                        >
+                          {a.source === 'audit' ? '审计' : '版本'}
+                        </span>
+                      </div>
+                      <div className="audit-time">{a.at || '—'}</div>
+                    </div>
+                    <div className="audit-details">
+                      <span className="audit-user">{a.actor}</span> {a.detail}
+                    </div>
                   </div>
-                  <div className="audit-details">
-                    <span className="audit-user">{a.actor}</span> {a.detail}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <div className="gate-note">
-              审计覆盖查看、下载、变更、授权、导出与 AI 调用，记录主体/时间/对象/结果（FR-GOV-007）。
-              本页素材元数据来自后台 API 实时查询。
+              记录来自后台 <strong>内容版本</strong>（GET /contents/{"{id}"}/versions）与
+              <strong>站点审计</strong>（dashboard/activity 中 objectId 命中本条目），
+              按时间倒序展示（FR-GOV-007）。
             </div>
           </section>
         </div>
