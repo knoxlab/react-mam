@@ -228,57 +228,134 @@ export function App() {
             </button>
           ))}
 
-          {!collapsed && <div className="nav-section-title">分类</div>}
-          {collapsed && <div className="nav-section-divider" />}
-          {NAV_KINDS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`nav-item${
-                route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
-              }`}
-              title={collapsed ? item.label : undefined}
-              onClick={() =>
-                go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
-              }
-            >
-              <span className="nav-icon" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span className="nav-label">{item.label}</span>
-            </button>
-          ))}
+          {/* 展开态：分类 / 管理 / 数据 */}
+          {!collapsed && (
+            <>
+              <div className="nav-section-title">分类</div>
+              {NAV_KINDS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`nav-item${
+                    route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
+                  }`}
+                  onClick={() =>
+                    go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
+                  }
+                >
+                  <span className="nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="nav-label">{item.label}</span>
+                </button>
+              ))}
 
-          {!collapsed && <div className="nav-section-title">管理</div>}
-          {collapsed && <div className="nav-section-divider" />}
-          {NAV_ADMIN.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              className="nav-item"
-              disabled={item.disabled}
-              title={collapsed ? item.label : item.title}
-            >
-              <span className="nav-icon" aria-hidden="true">
-                {item.icon}
-              </span>
-              <span className="nav-label">{item.label}</span>
-            </button>
-          ))}
+              <div className="nav-section-title">管理</div>
+              {NAV_ADMIN.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="nav-item"
+                  disabled={item.disabled}
+                  title={item.title}
+                >
+                  <span className="nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="nav-label">{item.label}</span>
+                </button>
+              ))}
 
-          {!collapsed && <div className="nav-section-title">数据</div>}
-          <button
-            type="button"
-            className="nav-item"
-            title={collapsed ? '刷新 API 数据' : undefined}
-            onClick={reload}
-          >
-            <span className="nav-icon" aria-hidden="true">
-              ↻
-            </span>
-            <span className="nav-label">刷新 API 数据</span>
-          </button>
+              <div className="nav-section-title">数据</div>
+              <button type="button" className="nav-item" onClick={reload}>
+                <span className="nav-icon" aria-hidden="true">
+                  ↻
+                </span>
+                <span className="nav-label">刷新 API 数据</span>
+              </button>
+            </>
+          )}
         </nav>
+
+        {/* 收起态：悬停浮动菜单，展示全部图标+名称 */}
+        {collapsed && (
+          <div className="sidebar-flyout" role="menu" aria-label="展开导航菜单">
+            <div className="flyout-group">
+              {NAV_MAIN.map((item) => (
+                <button
+                  key={`f-${item.key}`}
+                  type="button"
+                  className={`flyout-item${activeNav === item.key ? ' active' : ''}`}
+                  onClick={() => {
+                    if (item.key === 'dashboard') go({ name: 'dashboard' });
+                    else if (item.key === 'library') go({ name: 'library' });
+                    else if (item.key === 'upload') go({ name: 'upload' });
+                    else if (item.key === 'review') go({ name: 'review' });
+                    else go({ name: 'ai' });
+                  }}
+                >
+                  <span className="flyout-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="flyout-label">{item.label}</span>
+                  {item.key === 'review' && reviewCount > 0 && (
+                    <span className="flyout-badge">{reviewCount}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="flyout-divider" />
+            <div className="flyout-section">分类</div>
+            <div className="flyout-group">
+              {NAV_KINDS.map((item) => (
+                <button
+                  key={`f-kind-${item.key}`}
+                  type="button"
+                  className={`flyout-item${
+                    route.name === 'library' && (route.kind || 'all') === item.key ? ' active' : ''
+                  }`}
+                  onClick={() =>
+                    go(item.key === 'all' ? { name: 'library' } : { name: 'library', kind: item.key })
+                  }
+                >
+                  <span className="flyout-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="flyout-label">{item.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flyout-divider" />
+            <div className="flyout-section">管理</div>
+            <div className="flyout-group">
+              {NAV_ADMIN.map((item) => (
+                <button
+                  key={`f-adm-${item.label}`}
+                  type="button"
+                  className="flyout-item"
+                  disabled={item.disabled}
+                >
+                  <span className="flyout-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="flyout-label">{item.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flyout-divider" />
+            <div className="flyout-group">
+              <button type="button" className="flyout-item" onClick={reload}>
+                <span className="flyout-icon" aria-hidden="true">
+                  ↻
+                </span>
+                <span className="flyout-label">刷新 API 数据</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <SidebarUser onAuthChanged={reload} collapsed={collapsed} onExpand={toggleCollapsed} />
       </aside>
