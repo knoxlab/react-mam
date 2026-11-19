@@ -342,7 +342,11 @@ export function LibraryPage({ kind, onNavigate, assets, folders, loading, source
               <button type="button" className="btn btn-secondary" disabled={selected.size === 0}>
                 批量操作{selected.size > 0 ? ` (${selected.size})` : ''}
               </button>
-              <button type="button" className="btn btn-primary">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => onNavigate({ name: 'upload' })}
+              >
                 上传素材
               </button>
             </div>

@@ -148,6 +148,194 @@ export function avatarText(user: CurrentUser | null): string {
   return name.slice(0, 1).toUpperCase();
 }
 
+// ---- 上传与编目 ----
+
+export interface ContentFormField {
+  code: string;
+  name: string;
+  fieldType: string;
+  required?: boolean;
+  helpText?: string;
+  defaultValue?: string;
+  readOnly?: boolean;
+  options?: { value: string; label: string }[];
+}
+
+export interface ContentFormNode {
+  elementType: 'TAB' | 'FORM_SECTION' | 'FIELD' | 'REPEAT_GROUP';
+  title?: string;
+  field?: ContentFormField | null;
+  children?: ContentFormNode[];
+}
+
+export interface ContentForm {
+  code: string;
+  name: string;
+  nodes: ContentFormNode[];
+}
+
+export async function loadContentForm(
+  siteId: string,
+  code = 'media_asset'
+): Promise<ContentForm | null> {
+  try {
+    const res = await fetch(
+      `/api/v1/delivery/sites/${encodeURIComponent(siteId)}/content-forms/${encodeURIComponent(code)}`,
+      {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as ContentForm;
+    if (!data || !Array.isArray(data.nodes)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export interface UploadedMedia {
+  assetId: string;
+  knoxMediaId?: string | null;
+  status?: string;
+  filename: string;
+  mime: string;
+  size: number;
+  kind: AssetKind;
+}
+
+function kindFromMime(mime: string, filename: string): AssetKind {
+  const m = (mime || '').toLowerCase();
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  if (m.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext))
+    return 'image';
+  if (m.startsWith('video/') || ['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)) return 'video';
+  if (m.startsWith('audio/') || ['mp3', 'wav', 'aac', 'm4a', 'ogg'].includes(ext)) return 'audio';
+  if (['glb', 'gltf', 'fbx', 'obj'].includes(ext) || m.includes('model')) return 'model3d';
+  return 'document';
+}
+
+/** 上传媒体文件 → 返回资产 UUID（供 media_items 引用）。 */
+export async function uploadMediaFile(
+  siteId: string,
+  file: File
+): Promise<{ ok: boolean; media?: UploadedMedia; error?: string }> {
+  if (!siteId) return { ok: false, error: '缺少站点 ID' };
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  try {
+    const res = await fetch(`/api/v1/sites/${encodeURIComponent(siteId)}/media/knox/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd
+    });
+    if (!res.ok) {
+      let message = `上传失败（HTTP ${res.status}）`;
+      try {
+        const body = (await res.json()) as { message?: string };
+        if (body.message) message = body.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: message };
+    }
+    const data = (await res.json()) as {
+      assetId?: string;
+      knoxMediaId?: string | null;
+      status?: string;
+    };
+    if (!data.assetId) return { ok: false, error: '上传响应缺少 assetId' };
+    return {
+      ok: true,
+      media: {
+        assetId: data.assetId,
+        knoxMediaId: data.knoxMediaId,
+        status: data.status,
+        filename: file.name,
+        mime: file.type || 'application/octet-stream',
+        size: file.size,
+        kind: kindFromMime(file.type, file.name)
+      }
+    };
+  } catch {
+    return { ok: false, error: '网络错误，上传失败' };
+  }
+}
+
+export async function loadContentTypeId(siteId: string, code = 'media_asset'): Promise<string> {
+  try {
+    const res = await fetch(`/api/v1/sites/${encodeURIComponent(siteId)}/content-types`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!res.ok) return '';
+    const list = (await res.json()) as Array<{ id?: string; code?: string }>;
+    return list.find((x) => x.code === code)?.id || '';
+  } catch {
+    return '';
+  }
+}
+
+export interface CreateDraftResult {
+  ok: boolean;
+  contentId?: string;
+  assetCode?: string;
+  error?: string;
+}
+
+/** 保存草稿：创建 media_asset，workflow_status_s 固定为 editing（编目中）。 */
+export async function createMediaAssetDraft(
+  siteId: string,
+  input: {
+    title: string;
+    fieldValues: Record<string, unknown>;
+  }
+): Promise<CreateDraftResult> {
+  if (!siteId) return { ok: false, error: '缺少站点 ID' };
+  const contentTypeId = await loadContentTypeId(siteId, 'media_asset');
+  if (!contentTypeId) return { ok: false, error: '未找到 media_asset 内容类型' };
+
+  const fields: Record<string, unknown> = {
+    ...input.fieldValues,
+    workflow_status_s: 'editing'
+  };
+  const assetCode =
+    (typeof fields.asset_code_s === 'string' && fields.asset_code_s) ||
+    `MA-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(Date.now()).slice(-4)}`;
+  fields.asset_code_s = assetCode;
+  if (!fields.version_s) fields.version_s = 'v1';
+
+  try {
+    const res = await fetch(`/api/v1/sites/${encodeURIComponent(siteId)}/contents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        title: input.title || assetCode,
+        contentTypeId,
+        fieldValues: JSON.stringify(fields)
+      })
+    });
+    if (!res.ok) {
+      let message = `保存失败（HTTP ${res.status}）`;
+      try {
+        const body = (await res.json()) as { message?: string; details?: unknown[] };
+        if (body.message) message = body.message;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: message };
+    }
+    const data = (await res.json()) as { id?: string };
+    return { ok: true, contentId: data.id, assetCode };
+  } catch {
+    return { ok: false, error: '网络错误，保存失败' };
+  }
+}
+
 interface ContentRow {
   id?: string;
   title?: string;
@@ -635,10 +823,32 @@ function toShareFromAdmin(row: Record<string, unknown>): ShareLink {
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assetFromAdminFields(
+  contentId: string,
+  title: string,
+  fields: Record<string, unknown>
+): MediaAsset {
+  const row: ContentRow = {
+    id: contentId,
+    title,
+    status: 'DRAFT',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    fields
+  };
+  const asset = toMediaAsset(row);
+  asset.contentId = contentId;
+  asset.contentRowId = contentId;
+  return asset;
+}
+
 /**
  * 内容详情 API：
- * 1) 交付查询按资产编码定位条目（公开，含 fields）
- * 2) 已登录时增强：GET /contents/{id}/versions、GET /sites/{id}/contents/{cid}/shares
+ * 1) UUID → 管理端 GET /contents/{id} + versions（支持草稿）
+ * 2) 资产编码 → 交付查询（已发布）；未命中再回退管理端列表
+ * 3) 已登录时增强 shares
  */
 export async function loadAssetDetail(
   siteId: string,
@@ -654,111 +864,175 @@ export async function loadAssetDetail(
     return { ...empty, status: 'error', message: '缺少站点或资产编码' };
   }
 
-  // 1) 定位条目（公开交付查询）
-  const rows = await queryRows(siteId, 'media_asset');
-  if (rows === null) {
-    return { ...empty, status: 'error', message: '交付查询失败' };
-  }
-  const row =
-    rows.find((r) => {
-      const f = rowFields(r);
-      return text(f, 'asset_code_s') === assetCode || text(r, 'id') === assetCode;
-    }) || null;
-  if (!row) {
-    return { ...empty, status: 'not-found', message: '无对应已发布素材' };
-  }
-
-  const asset = toMediaAsset(row);
-  const contentId = text(row, 'id');
-  asset.contentId = contentId;
-  asset.related = [];
-
+  let asset: MediaAsset | null = null;
+  let contentId = '';
   let versions: VersionItem[] = [];
   let shareLinks: ShareLink[] = [];
   let status: DetailStatus = 'ok';
   let message: string | undefined;
 
-  // 2) 登录态增强（版本 / 分享）；401 时不阻断详情主体
-  if (contentId) {
-    const [verRes, shareRes] = await Promise.all([
-      fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+  if (UUID_RE.test(assetCode)) {
+    // 直接按 content UUID 拉详情（草稿/未发布）
+    contentId = assetCode;
+    try {
+      const res = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}`, {
         headers: { Accept: 'application/json' },
         credentials: 'include',
         cache: 'no-store'
-      }).catch(() => null),
-      fetch(
-        `/api/v1/sites/${encodeURIComponent(siteId)}/contents/${encodeURIComponent(contentId)}/shares`,
-        {
-          headers: { Accept: 'application/json' },
-          credentials: 'include',
-          cache: 'no-store'
-        }
-      ).catch(() => null)
-    ]);
+      });
+      if (res.status === 401 || res.status === 403) {
+        return { ...empty, status: 'unauthorized', message: '草稿详情需登录管理端' };
+      }
+      if (res.status === 404) {
+        return { ...empty, status: 'not-found', message: '内容不存在' };
+      }
+      if (!res.ok) {
+        return { ...empty, status: 'error', message: `详情接口 HTTP ${res.status}` };
+      }
+      const meta = (await res.json()) as { id?: string; title?: string; contentTypeId?: string };
+      const verRes = await fetch(`/api/v1/contents/${encodeURIComponent(contentId)}/versions`, {
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      let fields: Record<string, unknown> = {};
+      if (verRes.ok) {
+        const list = (await verRes.json()) as AdminVersionRow[];
+        versions = (list || []).map(toVersionFromAdmin);
+        versions.sort((a, b) => {
+          const na = parseInt(a.label.replace(/\D/g, ''), 10) || 0;
+          const nb = parseInt(b.label.replace(/\D/g, ''), 10) || 0;
+          return nb - na;
+        });
+        if (versions.length > 0) versions[0] = { ...versions[0], current: true };
+        const latest = (list || [])[0];
+        if (latest?.fieldValues) fields = parseFieldValues(latest.fieldValues);
+      }
+      asset = assetFromAdminFields(contentId, meta.title || assetCode, fields);
+      // 若有 asset_code 字段，优先用它作为路由 id 展示
+      const code = text(fields, 'asset_code_s');
+      if (code) asset.id = code;
+    } catch {
+      return { ...empty, status: 'error', message: '详情请求失败' };
+    }
+  } else {
+    // 资产编码：交付查询（已发布）
+    const rows = await queryRows(siteId, 'media_asset');
+    if (rows === null) {
+      return { ...empty, status: 'error', message: '交付查询失败' };
+    }
+    const row =
+      rows.find((r) => {
+        const f = rowFields(r);
+        return text(f, 'asset_code_s') === assetCode || text(r, 'id') === assetCode;
+      }) || null;
 
-    if (verRes && verRes.ok) {
+    if (row) {
+      asset = toMediaAsset(row);
+      contentId = text(row, 'id');
+      asset.contentId = contentId;
+      asset.related = [];
+    } else {
+      // 回退：管理端按类型列出并匹配 versions 中的 asset_code（草稿）
       try {
-        const data: unknown = await verRes.json();
-        if (Array.isArray(data)) {
-          versions = (data as AdminVersionRow[]).map(toVersionFromAdmin);
-          // 最新在前（接口通常已倒序）
-          versions.sort((a, b) => {
-            const na = parseInt(a.label.replace(/\D/g, ''), 10) || 0;
-            const nb = parseInt(b.label.replace(/\D/g, ''), 10) || 0;
-            return nb - na;
-          });
-          if (versions.length > 0) versions[0] = { ...versions[0], current: true };
+        const ctId = await loadContentTypeId(siteId, 'media_asset');
+        if (ctId) {
+          const listRes = await fetch(
+            `/api/v1/sites/${encodeURIComponent(siteId)}/content-types/${encodeURIComponent(ctId)}/contents`,
+            { headers: { Accept: 'application/json' }, credentials: 'include', cache: 'no-store' }
+          );
+          if (listRes.ok) {
+            const list = (await listRes.json()) as Array<{ id?: string; title?: string }>;
+            for (const item of list) {
+              if (!item.id) continue;
+              const vRes = await fetch(`/api/v1/contents/${encodeURIComponent(item.id)}/versions`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'include',
+                cache: 'no-store'
+              });
+              if (!vRes.ok) continue;
+              const vers = (await vRes.json()) as AdminVersionRow[];
+              const latest = vers?.[0];
+              if (!latest?.fieldValues) continue;
+              const fields = parseFieldValues(latest.fieldValues);
+              if (text(fields, 'asset_code_s') === assetCode) {
+                contentId = item.id;
+                versions = vers.map(toVersionFromAdmin);
+                versions.sort((a, b) => {
+                  const na = parseInt(a.label.replace(/\D/g, ''), 10) || 0;
+                  const nb = parseInt(b.label.replace(/\D/g, ''), 10) || 0;
+                  return nb - na;
+                });
+                if (versions.length > 0) versions[0] = { ...versions[0], current: true };
+                asset = assetFromAdminFields(item.id, item.title || assetCode, fields);
+                break;
+              }
+            }
+          }
         }
       } catch {
-        /* ignore */
+        /* fallthrough */
       }
-    } else if (verRes && (verRes.status === 401 || verRes.status === 403)) {
-      status = 'ok';
-      message = '版本/分享需登录管理端后加载';
+      if (!asset) {
+        return { ...empty, status: 'not-found', message: '无对应素材（含未发布草稿）' };
+      }
     }
+  }
 
-    if (shareRes && shareRes.ok) {
-      try {
+  // 分享链接（需登录，尽力而为）
+  if (contentId) {
+    try {
+      const shareRes = await fetch(
+        `/api/v1/sites/${encodeURIComponent(siteId)}/contents/${encodeURIComponent(contentId)}/shares`,
+        { headers: { Accept: 'application/json' }, credentials: 'include', cache: 'no-store' }
+      );
+      if (shareRes.ok) {
         const data: unknown = await shareRes.json();
         if (Array.isArray(data)) {
           shareLinks = (data as Record<string, unknown>[]).map(toShareFromAdmin);
         }
-      } catch {
-        /* ignore */
       }
+    } catch {
+      /* ignore */
     }
   }
 
-  // 无版本接口数据时，用条目字段兜底一条当前快照
-  if (versions.length === 0) {
+  if (versions.length === 0 && asset) {
     versions = [
       {
         label: asset.version || 'v1',
         current: true,
-        note: '当前已发布快照',
+        note: '当前快照',
         actor: asset.uploader,
         at: asset.uploadedAt,
-        change: '交付查询字段'
+        change: '详情加载'
       }
     ];
   }
 
-  // 关联素材：同事件/专题（仍走列表 API 已加载数据时由调用方补；这里用同查询结果）
-  const mappedAll = rows.map(toMediaAsset);
-  asset.related = mappedAll
-    .filter((other) => other.id !== asset.id)
-    .map((other) => {
-      let type: 'batch' | 'event' | 'similar' = 'similar';
-      if (other.event === asset.event && asset.event && asset.event !== '—') type = 'event';
-      else if (other.topic && other.topic === asset.topic) type = 'batch';
-      return {
-        id: other.id,
-        title: other.title,
-        type,
-        meta: `${other.id}${type === 'similar' ? ' · 语义相关' : ''}`
-      };
-    })
-    .slice(0, 4);
+  // 关联素材（仅已发布列表）
+  try {
+    const rows = await queryRows(siteId, 'media_asset');
+    if (rows && asset) {
+      const mappedAll = rows.map(toMediaAsset);
+      asset.related = mappedAll
+        .filter((other) => other.id !== asset!.id)
+        .map((other) => {
+          let type: 'batch' | 'event' | 'similar' = 'similar';
+          if (other.event === asset!.event && asset!.event && asset!.event !== '—') type = 'event';
+          else if (other.topic && other.topic === asset!.topic) type = 'batch';
+          return {
+            id: other.id,
+            title: other.title,
+            type,
+            meta: `${other.id}${type === 'similar' ? ' · 语义相关' : ''}`
+          };
+        })
+        .slice(0, 4);
+    }
+  } catch {
+    /* ignore */
+  }
 
   return {
     asset,

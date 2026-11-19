@@ -5,6 +5,7 @@ import { LibraryPage } from './pages/LibraryPage';
 import { DetailPage } from './pages/DetailPage';
 import { ReviewQueuePage } from './pages/ReviewQueuePage';
 import { AiCenterPage } from './pages/AiCenterPage';
+import { UploadPage } from './pages/UploadPage';
 import {
   loadAssetDetail,
   loadCatalog,
@@ -25,6 +26,7 @@ function parseHash(): Route {
   if (seg === 'detail' && param) return { name: 'detail', id: decodeURIComponent(param) };
   if (seg === 'review') return { name: 'review' };
   if (seg === 'ai') return { name: 'ai' };
+  if (seg === 'upload') return { name: 'upload' };
   return { name: 'dashboard' };
 }
 
@@ -36,11 +38,13 @@ function navigate(route: Route) {
     window.location.hash = `#/detail/${encodeURIComponent(route.id)}`;
   else if (route.name === 'review') window.location.hash = '#/review';
   else if (route.name === 'ai') window.location.hash = '#/ai';
+  else if (route.name === 'upload') window.location.hash = '#/upload';
 }
 
 const NAV_MAIN = [
   { key: 'dashboard', label: '工作台', icon: '▦' },
   { key: 'library', label: '媒资库', icon: '▤' },
+  { key: 'upload', label: '上传素材', icon: '↑' },
   { key: 'review', label: '审核队列', icon: '✓' },
   { key: 'ai', label: 'AI 加工中心', icon: '✦' }
 ] as const;
@@ -128,6 +132,7 @@ export function App() {
   const activeNav = useMemo(() => {
     if (route.name === 'detail') return 'library';
     if (route.name === 'library') return 'library';
+    if (route.name === 'upload') return 'upload';
     return route.name;
   }, [route]);
 
@@ -205,6 +210,7 @@ export function App() {
               onClick={() => {
                 if (item.key === 'dashboard') go({ name: 'dashboard' });
                 else if (item.key === 'library') go({ name: 'library' });
+                else if (item.key === 'upload') go({ name: 'upload' });
                 else if (item.key === 'review') go({ name: 'review' });
                 else go({ name: 'ai' });
               }}
@@ -330,6 +336,9 @@ export function App() {
           loading={loading}
           source={catalog.source}
         />
+      )}
+      {route.name === 'upload' && (
+        <UploadPage onNavigate={go} onSaved={reload} />
       )}
     </div>
   );

@@ -755,6 +755,214 @@ a {
   font-weight: 600;
 }
 
+/* —— 上传 / 编目 —— */
+.upload-dropzone {
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--color-base);
+  padding: 64px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.is-over {
+  border-color: var(--color-accent);
+  background: rgba(0, 102, 204, 0.04);
+}
+
+.upload-drop-icon {
+  margin-bottom: 12px;
+}
+
+.upload-drop-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.upload-drop-hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.upload-progress {
+  margin-top: 16px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.catalog-layout {
+  max-width: 960px;
+}
+
+.catalog-file-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--color-base);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.catalog-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.catalog-file-info strong {
+  font-size: 14px;
+}
+
+.catalog-file-info span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-family: var(--mono);
+}
+
+.catalog-asset-id {
+  word-break: break-all;
+}
+
+.status-badge-inline {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 157, 0, 0.12);
+  color: var(--color-status-progress-text);
+  border: 1px solid var(--color-status-progress);
+  flex-shrink: 0;
+}
+
+.form-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.form-tab {
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-family: inherit;
+}
+
+.form-tab.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.form-panel {
+  background: var(--color-base);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-field.full {
+  grid-column: 1 / -1;
+}
+
+.form-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.form-field .req {
+  color: var(--color-status-reject);
+  margin-left: 2px;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  padding: 9px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--color-base);
+  width: 100%;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.12);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 88px;
+  line-height: 1.5;
+}
+
+.field-help {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.linked-media-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(0, 102, 204, 0.06);
+  border: 1px solid rgba(0, 102, 204, 0.25);
+  border-radius: 4px;
+}
+
+.linked-media-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.linked-media-meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.catalog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .action-btn.approve {
   background: var(--color-status-approved-text);
   color: white;

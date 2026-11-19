@@ -286,7 +286,7 @@ export function DashboardPage({
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => onNavigate({ name: 'library' })}
+              onClick={() => onNavigate({ name: 'upload' })}
             >
               上传素材
             </button>

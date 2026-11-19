@@ -3,4 +3,5 @@ export type Route =
   | { name: 'library'; kind?: string }
   | { name: 'detail'; id: string }
   | { name: 'review' }
-  | { name: 'ai' };
+  | { name: 'ai' }
+  | { name: 'upload' };
