@@ -57,13 +57,13 @@ function renderArt(kind: AssetKind) {
     case 'video':
       return (
         <g>
-          <rect x="14" y="16" width="92" height="50" rx="6" fill="#1A1A1A" />
-          <rect x="14" y="16" width="92" height="50" rx="6" fill="none" stroke="#0066CC" strokeWidth="1.5" opacity="0.6" />
-          <polygon points="52,32 52,50 70,41" fill="#FFFFFF" />
-          <rect x="20" y="60" width="80" height="3" rx="1.5" fill="#333" />
+          <rect x="14" y="16" width="92" height="50" rx="6" fill="#FFFFFF" stroke="#0066CC" strokeWidth="1.5" />
+          <rect x="20" y="22" width="80" height="36" rx="3" fill="#E8F1FC" />
+          <polygon points="52,32 52,50 70,41" fill="#0066CC" />
+          <rect x="20" y="60" width="80" height="3" rx="1.5" fill="#D0D7DE" />
           <rect x="20" y="60" width="36" height="3" rx="1.5" fill="#0066CC" />
-          <rect x="22" y="20" width="18" height="8" rx="2" fill="#333" opacity="0.8" />
-          <rect x="80" y="20" width="18" height="8" rx="2" fill="#333" opacity="0.8" />
+          <rect x="22" y="20" width="18" height="8" rx="2" fill="#0066CC" opacity="0.2" />
+          <rect x="80" y="20" width="18" height="8" rx="2" fill="#0066CC" opacity="0.2" />
         </g>
       );
     case 'audio':

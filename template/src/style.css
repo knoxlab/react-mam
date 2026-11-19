@@ -1704,16 +1704,16 @@ a {
 
 /* 类型配色底 */
 .kind-image {
-  background: linear-gradient(160deg, #E8F1FC 0%, #F5F9FF 100%);
+  background: linear-gradient(160deg, #e8f1fc 0%, #f5f9ff 100%);
 }
 .kind-video {
-  background: linear-gradient(160deg, #1A1A1A 0%, #2A2A2A 100%);
+  background: linear-gradient(160deg, #e8f1fc 0%, #f0f6ff 100%);
 }
 .kind-video .kind-thumb-label {
-  color: #e0e0e0;
+  color: #0066cc;
 }
 .kind-audio {
-  background: linear-gradient(160deg, #FFF5E6 0%, #FFFAF2 100%);
+  background: linear-gradient(160deg, #fff5e6 0%, #fffaf2 100%);
 }
 .kind-audio .kind-thumb-label {
   color: #B36B00;
